@@ -121,6 +121,47 @@ The real backend requires **two terminals plus the Minecraft window**:
 
 Starting Minecraft is not enough: you must enter a single-player world and wait until the player HUD and terrain are visible before calling `env.reset()`.
 
+### One-command development launcher
+
+The helper script starts both Terminal 1 services in the background: the
+Minecraft Fabric development client and JupyterLab with the test notebook.
+
+```bash
+./scripts/run_dev.sh
+```
+
+The script detects a Homebrew JDK 21 installation automatically, stores PID
+files under `.minecraft-gym/`, opens JupyterLab, and writes service logs to:
+
+```text
+.minecraft-gym/logs/minecraft.log
+.minecraft-gym/logs/jupyter.log
+```
+
+After it starts, enter a single-player Survival world in the Minecraft window.
+The script cannot select a world on your behalf unless a development save name
+is explicitly provided:
+
+```bash
+MINECRAFT_GYM_QUICK_PLAY_WORLD=MyWorld ./scripts/run_dev.sh
+```
+
+`MyWorld` must already exist under `fabric/run/saves/`. To inspect what would
+be launched without starting processes:
+
+```bash
+./scripts/run_dev.sh --dry-run
+```
+
+Stop both Minecraft and JupyterLab with:
+
+```bash
+./scripts/stop_dev.sh
+```
+
+The stop script terminates only the process trees recorded by the launcher and
+preserves the logs for debugging.
+
 ### Option A — development client
 
 This is the quickest way to run the project during development.
@@ -448,6 +489,8 @@ src/minecraft_gym/       environment, actions, rewards, recorder, and transport
 fabric/                  Fabric mod and local bridge
 scripts/smoke_env.py     real or simulated smoke test
 scripts/record_human.py  human demonstration collection
+scripts/run_dev.sh       start Minecraft and JupyterLab
+scripts/stop_dev.sh      stop the development session
 tests/                   Gym contract and protocol tests
 docs/protocol.md         TCP protocol specification
 ```
