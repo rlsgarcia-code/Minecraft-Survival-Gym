@@ -2,7 +2,7 @@
 
 > A Gymnasium environment for training reinforcement learning agents to survive in Minecraft Java, with visual observations, full player controls, and keyboard/mouse demonstration recording.
 
-Minecraft Survival Gym connects Python policies to Minecraft Java 1.21 through a Fabric client mod and exposes the game as `MinecraftSurvival-v0`. It is designed as an experimental foundation for reinforcement learning, imitation learning, DAgger, and future VLM/LLM-driven objectives and rewards.
+Minecraft Survival Gym connects Python policies to Minecraft Java 1.21 through a Fabric client mod and exposes the game as `minecraft_gym/MinecraftSurvival-v0`. It is designed as an experimental foundation for reinforcement learning, imitation learning, DAgger, and future VLM/LLM-driven objectives and rewards.
 
 > [!IMPORTANT]
 > This is an independent experimental project. It is not an official Minecraft product and is not affiliated with Mojang or Microsoft.
@@ -245,10 +245,10 @@ notebook.
 
 ```python
 import gymnasium as gym
-import minecraft_gym  # registers MinecraftSurvival-v0
+import minecraft_gym  # registers the environment
 
 env = gym.make(
-    "MinecraftSurvival-v0",
+    "minecraft_gym/MinecraftSurvival-v0",
     backend="socket",
     width=128,
     height=128,
@@ -271,6 +271,10 @@ env.close()
 ```
 
 Use `backend="mock"` for fast and deterministic tests that do not require Minecraft.
+
+`MinecraftSurvival-v0` remains available as a compatibility alias. New code
+should use the namespaced ID to avoid collisions with other third-party
+environment packages.
 
 ## Action space
 
@@ -511,4 +515,7 @@ The bridge specification is available in [`docs/protocol.md`](docs/protocol.md).
 
 ## Contributing
 
-Issues and pull requests are welcome. When reporting a problem, include the Minecraft, Fabric Loader, Fabric API, Java, and operating system versions, along with minimal reproduction steps.
+Issues and pull requests are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md)
+for the development workflow. When reporting a problem, include the Minecraft,
+Fabric Loader, Fabric API, Java, and operating system versions, along with
+minimal reproduction steps.

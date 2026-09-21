@@ -22,6 +22,22 @@ def test_registered_environment_can_be_created() -> None:
     env.close()
 
 
+def test_namespaced_and_legacy_environment_ids_are_registered() -> None:
+    assert minecraft_gym.ENV_ID == "minecraft_gym/MinecraftSurvival-v0"
+    assert minecraft_gym.ENV_ID in gym.registry
+    assert minecraft_gym.LEGACY_ENV_ID in gym.registry
+
+    legacy_env = gym.make(
+        minecraft_gym.LEGACY_ENV_ID,
+        backend="mock",
+        width=8,
+        height=6,
+    )
+    observation, _ = legacy_env.reset(seed=4)
+    assert observation["rgb"].shape == (6, 8, 3)
+    legacy_env.close()
+
+
 def test_reset_is_seed_reproducible_and_step_advances_exact_ticks() -> None:
     env = MinecraftSurvivalEnv(
         backend="mock", width=16, height=12, frame_skip=4, render_mode="rgb_array"

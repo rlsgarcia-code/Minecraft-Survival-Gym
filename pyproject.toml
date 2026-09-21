@@ -8,6 +8,27 @@ version = "0.1.0"
 description = "A Gymnasium environment and bridge protocol for controlling Minecraft Java Edition."
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = [
+  "reinforcement-learning",
+  "gymnasium",
+  "minecraft",
+  "imitation-learning",
+  "embodied-ai",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
   "gymnasium>=1.1,<2",
   "numpy>=1.26,<3",
@@ -23,6 +44,11 @@ notebook = [
   "matplotlib>=3.8,<4",
   "nbclient>=0.10,<1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/rlsgarcia-code/Minecraft-Survival-Gym"
+Repository = "https://github.com/rlsgarcia-code/Minecraft-Survival-Gym"
+Issues = "https://github.com/rlsgarcia-code/Minecraft-Survival-Gym/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/minecraft_gym"]
