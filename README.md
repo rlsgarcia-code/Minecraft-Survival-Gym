@@ -57,14 +57,14 @@ O ambiente foi validado ponta a ponta com uma instância real do Minecraft:
 
 - Python 3.10 ou superior;
 - [`uv`](https://docs.astral.sh/uv/);
-- Java 21;
+- JDK 21 — não apenas um JRE e não Java 8/17;
 - Minecraft Java Edition 1.21;
 - Fabric Loader;
 - Fabric API compatível com Minecraft 1.21.
 
 ## Instalação
 
-Clone o repositório e instale o pacote Python:
+### 1. Clone e instale o ambiente Python
 
 ```bash
 git clone https://github.com/rlsgarcia-code/Minecraft-Survival-Gym.git
@@ -72,7 +72,33 @@ cd Minecraft-Survival-Gym
 uv sync --extra dev
 ```
 
-Compile o mod Fabric:
+Confirme primeiro o funcionamento do contrato Gym sem abrir o jogo:
+
+```bash
+uv run python scripts/smoke_env.py --backend mock --steps 20
+```
+
+### 2. Configure o Java 21
+
+Verifique qual Java está ativo:
+
+```bash
+java -version
+```
+
+A primeira linha deve indicar a versão 21. No macOS com Homebrew:
+
+```bash
+brew install openjdk@21
+export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
+export PATH="$JAVA_HOME/bin:$PATH"
+java -version
+```
+
+Para manter essa configuração em novos terminais, adicione as duas linhas de
+`export` ao seu `~/.zshrc`.
+
+### 3. Compile o mod Fabric
 
 ```bash
 cd fabric
@@ -86,21 +112,71 @@ O artefato será criado em:
 fabric/build/libs/minecraft-gym-bridge-0.1.0.jar
 ```
 
-Copie esse arquivo para a pasta `mods` de uma instalação Fabric do Minecraft 1.21 que também contenha a Fabric API. Depois, abra um mundo single-player em modo Survival.
+### 4. Inicie o bridge
+
+Há duas formas de executar o Minecraft com o bridge.
+
+#### Opção A — cliente de desenvolvimento
+
+É a forma mais rápida para desenvolver. No primeiro terminal:
+
+```bash
+cd fabric
+./gradlew runClient
+```
+
+Quando o Minecraft abrir, crie ou entre em um mundo **single-player** em modo
+Survival. Mantenha o jogo e esse terminal abertos.
+
+#### Opção B — instalação normal do Minecraft
+
+Copie `fabric/build/libs/minecraft-gym-bridge-0.1.0.jar` para a pasta `mods` de
+uma instalação Fabric do Minecraft 1.21. Essa instalação também precisa conter
+a Fabric API. Inicie o jogo pelo launcher e entre em um mundo single-player em
+modo Survival.
 
 ## Teste rápido
 
-Com o Minecraft aberto dentro de um mundo:
+Com o bridge carregado e o jogador dentro do mundo, abra um **segundo terminal**:
 
 ```bash
+cd Minecraft-Survival-Gym
 uv run python scripts/smoke_env.py --steps 20
 ```
 
-Para verificar apenas a interface Gymnasium, sem iniciar o jogo:
+Uma execução correta começa com uma saída semelhante a:
+
+```text
+reset tick=... seed=... rgb=(128, 128, 3)
+step=1 tick=... reward=... terminated=False truncated=False
+```
+
+## Problemas comuns
+
+### `Gradle requires JVM 17 or later` / `configured to use JVM 8`
+
+O Gradle encontrou uma instalação antiga do Java. Selecione explicitamente o
+JDK 21 antes de executar o wrapper:
 
 ```bash
-uv run python scripts/smoke_env.py --backend mock --steps 20
+export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
+export PATH="$JAVA_HOME/bin:$PATH"
+java -version
+cd fabric
+./gradlew build
 ```
+
+### `ConnectionRefusedError: [Errno 61] Connection refused`
+
+O pacote Python está funcionando, mas não encontrou o bridge em
+`127.0.0.1:25570`. Confirme que:
+
+1. o Minecraft foi iniciado com o mod;
+2. o jogador já entrou em um mundo single-player;
+3. `./gradlew runClient` ou o launcher ainda está aberto;
+4. nenhum outro processo está usando a porta `25570`.
+
+O teste com `--backend mock` não abre o Minecraft nem testa a conexão com o mod.
 
 ## Uso básico
 
