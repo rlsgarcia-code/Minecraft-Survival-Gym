@@ -1,5 +1,10 @@
 # Minecraft Survival Gym
 
+[![PyPI](https://img.shields.io/pypi/v/minecraft-gym.svg)](https://pypi.org/project/minecraft-gym/)
+[![CI](https://github.com/rlsgarcia-code/Minecraft-Survival-Gym/actions/workflows/ci.yml/badge.svg)](https://github.com/rlsgarcia-code/Minecraft-Survival-Gym/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/pypi/pyversions/minecraft-gym.svg)](https://pypi.org/project/minecraft-gym/)
+[![License](https://img.shields.io/github/license/rlsgarcia-code/Minecraft-Survival-Gym)](LICENSE)
+
 > A Gymnasium environment for training reinforcement learning agents to survive in Minecraft Java, with visual observations, full player controls, and keyboard/mouse demonstration recording.
 
 Minecraft Survival Gym connects Python policies to Minecraft Java 1.21 through a Fabric client mod and exposes the game as `minecraft_gym/MinecraftSurvival-v0`. It is designed as an experimental foundation for reinforcement learning, imitation learning, DAgger, and future VLM/LLM-driven objectives and rewards.
@@ -62,7 +67,23 @@ The environment has been validated end to end against a real Minecraft client:
 
 ## Installation
 
-### 1. Clone the repository and install Python dependencies
+### Published release
+
+Install the Python environment from PyPI:
+
+```bash
+pip install minecraft-gym==0.1.0
+```
+
+Download
+[`minecraft-gym-bridge-0.1.0.jar`](https://github.com/rlsgarcia-code/Minecraft-Survival-Gym/releases/download/v0.1.0/minecraft-gym-bridge-0.1.0.jar)
+from the `v0.1.0` release and place it in the Minecraft Fabric `mods`
+directory together with Fabric API. Continue with the runtime instructions
+under **Running the real environment**.
+
+### Development installation from source
+
+#### 1. Clone the repository and install Python dependencies
 
 ```bash
 git clone https://github.com/rlsgarcia-code/Minecraft-Survival-Gym.git
@@ -76,7 +97,7 @@ Verify the Gymnasium API without launching Minecraft:
 uv run python scripts/smoke_env.py --backend mock --steps 20
 ```
 
-### 2. Select JDK 21
+#### 2. Select JDK 21
 
 Check the active Java version:
 
@@ -95,7 +116,7 @@ java -version
 
 To keep this configuration across terminal sessions, add the two `export` lines to `~/.zshrc`.
 
-### 3. Build the Fabric mod
+#### 3. Build the Fabric mod
 
 ```bash
 cd fabric
