@@ -180,6 +180,26 @@ step=1 tick=... reward=... terminated=False truncated=False
 5. Enter a single-player Survival world and wait for it to finish loading.
 6. Run the Python command from Terminal 2 as shown above.
 
+## Test notebook
+
+The repository includes a guided notebook that validates observation shapes,
+renders an RGB frame, executes a controlled action, checks tick advancement,
+and optionally connects to the real Fabric bridge:
+
+[`output/jupyter-notebook/minecraft-survival-gym-quickstart.ipynb`](output/jupyter-notebook/minecraft-survival-gym-quickstart.ipynb)
+
+Launch it from the repository root:
+
+```bash
+uv run --extra notebook jupyter lab \
+  output/jupyter-notebook/minecraft-survival-gym-quickstart.ipynb
+```
+
+The notebook uses the mock backend by default, so **Run All** is safe without
+Minecraft. For the real test, keep Terminal 1 running `./gradlew runClient`,
+enter a loaded single-player world, and then set `REAL_BACKEND = True` in the
+notebook.
+
 ## Basic usage
 
 ```python

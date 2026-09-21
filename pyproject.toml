@@ -17,6 +17,12 @@ dependencies = [
 dev = [
   "pytest>=8,<9",
 ]
+notebook = [
+  "ipykernel>=6,<8",
+  "jupyterlab>=4,<5",
+  "matplotlib>=3.8,<4",
+  "nbclient>=0.10,<1",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/minecraft_gym"]
