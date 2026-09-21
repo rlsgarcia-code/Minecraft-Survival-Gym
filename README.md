@@ -59,11 +59,15 @@ The environment has been validated end to end against a real Minecraft client:
 ## Requirements
 
 - Python 3.10 or newer;
-- [`uv`](https://docs.astral.sh/uv/);
-- JDK 21 — not only a JRE, and not Java 8 or 17;
 - Minecraft Java Edition 1.21;
 - Fabric Loader;
 - Fabric API compatible with Minecraft 1.21.
+
+[`uv`](https://docs.astral.sh/uv/) is required only for development from a
+source checkout. It is not required when installing the published Python
+package with `pip`. The published mod runs with the Java 21 runtime selected by
+the Minecraft Launcher; a full JDK 21 is required only to build or run the
+Fabric development client from source.
 
 ## Installation
 
@@ -78,8 +82,29 @@ pip install minecraft-gym==0.1.0
 Download
 [`minecraft-gym-bridge-0.1.0.jar`](https://github.com/rlsgarcia-code/Minecraft-Survival-Gym/releases/download/v0.1.0/minecraft-gym-bridge-0.1.0.jar)
 from the `v0.1.0` release and place it in the Minecraft Fabric `mods`
-directory together with Fabric API. Continue with the runtime instructions
-under **Running the real environment**.
+directory together with Fabric API.
+
+For a release installation, the start sequence is:
+
+1. Open the Minecraft Launcher and launch Minecraft 1.21 with the Fabric
+   profile. There is no terminal command for this step in version `0.1.0`.
+2. Enter a single-player Survival world and wait until the terrain and HUD are
+   visible.
+3. In a terminal with `minecraft-gym` installed, run your agent with
+   `python your_agent.py`.
+
+To check the connection without creating a file:
+
+```bash
+python -c 'import gymnasium as gym, minecraft_gym; env = gym.make("minecraft_gym/MinecraftSurvival-v0"); observation, info = env.reset(seed=42); print(observation["rgb"].shape, info["tick"]); env.close()'
+```
+
+This command connects to an already running Minecraft world; it does not launch
+Minecraft itself.
+
+To stop a release session, interrupt the Python agent with `Ctrl+C` and close
+Minecraft normally. The repository's `stop_dev.sh` command manages only
+processes started by the source-development launcher.
 
 ### Development installation from source
 
@@ -132,20 +157,22 @@ fabric/build/libs/minecraft-gym-bridge-0.1.0.jar
 
 ## Running the real environment
 
-The real backend requires **two terminals plus the Minecraft window**:
+The real backend always requires a running Minecraft window with a loaded
+single-player world. The number of terminals depends on the installation:
 
-| Component | Purpose | Must remain open? |
+| Installation | Start Minecraft | Start the Python environment |
 |---|---|---|
-| Terminal 1 | launches Minecraft with the Fabric bridge | yes |
-| Minecraft window | hosts the loaded single-player world | yes |
-| Terminal 2 | runs the Python Gymnasium environment | while the agent is running |
+| Published release (`pip`) | Minecraft Launcher with the Fabric profile | `python your_agent.py` |
+| Source checkout | Terminal 1: `cd fabric && ./gradlew runClient` | Terminal 2: agent, smoke test, or notebook |
 
 Starting Minecraft is not enough: you must enter a single-player world and wait until the player HUD and terrain are visible before calling `env.reset()`.
 
 ### One-command development launcher
 
-The helper script starts both Terminal 1 services in the background: the
-Minecraft Fabric development client and JupyterLab with the test notebook.
+The helper script starts the Minecraft Fabric development client and JupyterLab
+with the test notebook in the background.
+It is available only in a cloned source checkout and is not installed by
+`pip`.
 
 ```bash
 ./scripts/run_dev.sh
