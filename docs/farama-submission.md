@@ -12,7 +12,7 @@ into its core package, so the project remains independently maintained.
 - [x] Deterministic mock backend for CI
 - [x] Python package metadata and MIT license
 - [x] Python and Fabric continuous integration
-- [x] Publish the Python distribution to [PyPI](https://pypi.org/project/minecraft-gym/0.1.0/)
+- [x] Publish the Python distribution to [PyPI](https://pypi.org/project/minecraft-gym/)
 - [x] Publish the Fabric bridge JAR in the [v0.1.0 GitHub release](https://github.com/rlsgarcia-code/Minecraft-Survival-Gym/releases/tag/v0.1.0)
 - [ ] Add a short demonstration video or GIF
 - [ ] Confirm the proposed entry with the Farama community on Discord

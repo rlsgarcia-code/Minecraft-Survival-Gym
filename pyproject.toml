@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "minecraft-gym"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Gymnasium environment and bridge protocol for controlling Minecraft Java Edition."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -49,6 +49,9 @@ notebook = [
 Homepage = "https://github.com/rlsgarcia-code/Minecraft-Survival-Gym"
 Repository = "https://github.com/rlsgarcia-code/Minecraft-Survival-Gym"
 Issues = "https://github.com/rlsgarcia-code/Minecraft-Survival-Gym/issues"
+
+[project.scripts]
+minecraft-gym = "minecraft_gym.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/minecraft_gym"]

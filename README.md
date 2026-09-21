@@ -76,7 +76,7 @@ Fabric development client from source.
 Install the Python environment from PyPI:
 
 ```bash
-pip install minecraft-gym==0.1.0
+pip install minecraft-gym==0.2.0
 ```
 
 Download
@@ -84,14 +84,45 @@ Download
 from the `v0.1.0` release and place it in the Minecraft Fabric `mods`
 directory together with Fabric API.
 
-For a release installation, the start sequence is:
+Version `0.2.0` includes an interactive start command:
 
-1. Open the Minecraft Launcher and launch Minecraft 1.21 with the Fabric
-   profile. There is no terminal command for this step in version `0.1.0`.
-2. Enter a single-player Survival world and wait until the terrain and HUD are
-   visible.
-3. In a terminal with `minecraft-gym` installed, run your agent with
-   `python your_agent.py`.
+```bash
+minecraft-gym start
+```
+
+It offers **1. Record keyboard/mouse** or **2. Run an agent** after you enter
+a Survival world. You can also select a mode directly. To record a
+keyboard/mouse demonstration:
+
+```bash
+minecraft-gym start record --output datasets/demonstrations --steps 9000
+```
+
+To run your own Python agent:
+
+```bash
+minecraft-gym start agent path/to/agent.py
+```
+
+On macOS, `start` opens the Minecraft Launcher. Select the Minecraft 1.21
+Fabric profile, click **Play**, and enter a single-player Survival world.
+The command waits for the bridge, then asks you to press Enter after the
+terrain and player HUD are visible. It then begins recording or runs the
+agent script. Keep the Minecraft window focused while recording keyboard and
+mouse input. The agent script itself must create and close its Gymnasium
+environment; `start agent` does not supply a built-in policy.
+
+On Linux, `start` uses `minecraft-launcher` if it is on `PATH`.
+Otherwise pass `--launcher` with the launch command; on macOS this option
+accepts an application name or path. If Minecraft is already open, use
+`minecraft-gym start --no-launch record` or
+`minecraft-gym start --no-launch agent path/to/agent.py`.
+The CLI does not install Minecraft, Fabric Loader, Fabric API, or the bridge
+mod.
+
+Recording uses `reset()` before its first step. This soft reset clears the
+player inventory, restores vitals, time, and weather, and moves the player to
+the session anchor. It does not rebuild modified blocks.
 
 To check the connection without creating a file:
 
@@ -99,12 +130,10 @@ To check the connection without creating a file:
 python -c 'import gymnasium as gym, minecraft_gym; env = gym.make("minecraft_gym/MinecraftSurvival-v0"); observation, info = env.reset(seed=42); print(observation["rgb"].shape, info["tick"]); env.close()'
 ```
 
-This command connects to an already running Minecraft world; it does not launch
-Minecraft itself.
-
-To stop a release session, interrupt the Python agent with `Ctrl+C` and close
-Minecraft normally. The repository's `stop_dev.sh` command manages only
-processes started by the source-development launcher.
+This command only checks a running world; it does not launch Minecraft.
+To stop a `start` session, press `Ctrl+C` and close Minecraft normally.
+The repository's `stop_dev.sh` command manages only processes started by the
+source-development launcher.
 
 ### Development installation from source
 
@@ -162,7 +191,7 @@ single-player world. The number of terminals depends on the installation:
 
 | Installation | Start Minecraft | Start the Python environment |
 |---|---|---|
-| Published release (`pip`) | Minecraft Launcher with the Fabric profile | `python your_agent.py` |
+| Published release (`pip`) | `minecraft-gym start` opens the launcher; select Fabric and click Play | `start record` captures input; `start agent path/to/agent.py` runs your script |
 | Source checkout | Terminal 1: `cd fabric && ./gradlew runClient` | Terminal 2: agent, smoke test, or notebook |
 
 Starting Minecraft is not enough: you must enter a single-player world and wait until the player HUD and terrain are visible before calling `env.reset()`.
