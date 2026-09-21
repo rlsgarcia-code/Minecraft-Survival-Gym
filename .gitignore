@@ -1,0 +1,15 @@
+.venv/
+.DS_Store
+.idea/
+.vscode/
+AGENTS.md
+sources/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+dist/
+build/
+datasets/
+run/
+fabric/.gradle/

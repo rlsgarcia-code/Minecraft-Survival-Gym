@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "minecraft-gym"
+version = "0.1.0"
+description = "A Gymnasium environment and bridge protocol for controlling Minecraft Java Edition."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "gymnasium>=1.1,<2",
+  "numpy>=1.26,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/minecraft_gym"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
