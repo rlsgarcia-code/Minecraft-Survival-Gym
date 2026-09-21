@@ -1,70 +1,68 @@
 # Minecraft Survival Gym
 
-> Um ambiente Gymnasium para treinar agentes de reinforcement learning a sobreviver no Minecraft Java — com observações visuais, controle completo do jogador e gravação de demonstrações por teclado e mouse.
+> A Gymnasium environment for training reinforcement learning agents to survive in Minecraft Java, with visual observations, full player controls, and keyboard/mouse demonstration recording.
 
-`Minecraft Survival Gym` conecta políticas Python ao Minecraft Java 1.21 por meio de um mod Fabric e expõe o jogo como o ambiente `MinecraftSurvival-v0`. O objetivo é servir como base experimental para reinforcement learning, imitation learning, DAgger e, futuramente, geração dinâmica de objetivos e recompensas com VLMs e modelos de linguagem.
+Minecraft Survival Gym connects Python policies to Minecraft Java 1.21 through a Fabric client mod and exposes the game as `MinecraftSurvival-v0`. It is designed as an experimental foundation for reinforcement learning, imitation learning, DAgger, and future VLM/LLM-driven objectives and rewards.
 
 > [!IMPORTANT]
-> Este é um projeto experimental e independente. Não é um produto oficial nem possui afiliação com Mojang ou Microsoft.
+> This is an independent experimental project. It is not an official Minecraft product and is not affiliated with Mojang or Microsoft.
 
-## Visão geral
+## Features
 
-O ambiente oferece:
+- Gymnasium-compatible `reset()`, `step()`, `render()`, and `close()` API;
+- RGB observations combined with structured player state;
+- movement, camera, combat, item use, hotbar, and GUI actions;
+- controlled simulation time with an exact number of ticks per action;
+- agent, human, and DAgger control modes;
+- atomic trajectory recording for behavior cloning and imitation learning;
+- deterministic mock backend for development without Minecraft;
+- pluggable reward functions decoupled from the game loop.
 
-- interface compatível com Gymnasium: `reset()`, `step()`, `render()` e `close()`;
-- observação visual RGB combinada com estado estruturado do jogador;
-- ações de movimento, câmera, combate, uso de itens, hotbar e interfaces gráficas;
-- execução temporal controlada, com um número exato de ticks por ação;
-- modos de controle por agente, humano e DAgger;
-- gravação atômica de trajetórias para behavior cloning e imitation learning;
-- backend simulado para desenvolver e testar sem abrir o Minecraft;
-- função de recompensa substituível, sem acoplamento ao loop do jogo.
-
-## Arquitetura
+## Architecture
 
 ```text
-Política RL / Operador humano
-             │
-             ▼
-  MinecraftSurvivalEnv
-       (Gymnasium)
-             │  TCP local / JSON
-             ▼
-      Mod Fabric Bridge
-             │
-             ▼
+RL policy / Human operator
+            │
+            ▼
+ MinecraftSurvivalEnv
+      (Gymnasium)
+            │  Local TCP / JSON
+            ▼
+     Fabric bridge mod
+            │
+            ▼
  Minecraft Java — Survival
-             │
-             └── RGB + vitais + pose + inventário + eventos
+            │
+            └── RGB + vitals + pose + inventory + events
 ```
 
-O bridge escuta exclusivamente em `127.0.0.1:25570`. As requisições são processadas sequencialmente para preservar a relação entre ação, ticks executados e observação retornada.
+The bridge listens only on `127.0.0.1:25570`. Requests are processed sequentially to preserve the relationship between each action, the executed game ticks, and the returned observation.
 
-## Estado do projeto
+## Project status
 
-O ambiente foi validado ponta a ponta com uma instância real do Minecraft:
+The environment has been validated end to end against a real Minecraft client:
 
-- handshake entre Python e o mod Fabric;
-- captura RGB em `128 × 128 × 3`;
-- avanço exato de quatro ticks por ação;
-- movimento e rotação da câmera;
-- execução no modo DAgger;
-- gravação de episódios humanos;
-- conformidade do ambiente com o verificador do Gymnasium;
-- suíte automatizada com 8 testes.
+- Python-to-Fabric handshake;
+- `128 × 128 × 3` RGB capture;
+- exact four-tick advancement per action;
+- player movement and camera rotation;
+- DAgger execution;
+- human episode recording;
+- Gymnasium environment checker compliance;
+- automated Python test suite.
 
-## Requisitos
+## Requirements
 
-- Python 3.10 ou superior;
+- Python 3.10 or newer;
 - [`uv`](https://docs.astral.sh/uv/);
-- JDK 21 — não apenas um JRE e não Java 8/17;
+- JDK 21 — not only a JRE, and not Java 8 or 17;
 - Minecraft Java Edition 1.21;
 - Fabric Loader;
-- Fabric API compatível com Minecraft 1.21.
+- Fabric API compatible with Minecraft 1.21.
 
-## Instalação
+## Installation
 
-### 1. Clone e instale o ambiente Python
+### 1. Clone the repository and install Python dependencies
 
 ```bash
 git clone https://github.com/rlsgarcia-code/Minecraft-Survival-Gym.git
@@ -72,21 +70,21 @@ cd Minecraft-Survival-Gym
 uv sync --extra dev
 ```
 
-Confirme primeiro o funcionamento do contrato Gym sem abrir o jogo:
+Verify the Gymnasium API without launching Minecraft:
 
 ```bash
 uv run python scripts/smoke_env.py --backend mock --steps 20
 ```
 
-### 2. Configure o Java 21
+### 2. Select JDK 21
 
-Verifique qual Java está ativo:
+Check the active Java version:
 
 ```bash
 java -version
 ```
 
-A primeira linha deve indicar a versão 21. No macOS com Homebrew:
+The first line must report Java 21. On macOS with Homebrew:
 
 ```bash
 brew install openjdk@21
@@ -95,10 +93,9 @@ export PATH="$JAVA_HOME/bin:$PATH"
 java -version
 ```
 
-Para manter essa configuração em novos terminais, adicione as duas linhas de
-`export` ao seu `~/.zshrc`.
+To keep this configuration across terminal sessions, add the two `export` lines to `~/.zshrc`.
 
-### 3. Compile o mod Fabric
+### 3. Build the Fabric mod
 
 ```bash
 cd fabric
@@ -106,83 +103,88 @@ cd fabric
 cd ..
 ```
 
-O artefato será criado em:
+The mod artifact is written to:
 
 ```text
 fabric/build/libs/minecraft-gym-bridge-0.1.0.jar
 ```
 
-### 4. Inicie o bridge
+## Running the real environment
 
-Há duas formas de executar o Minecraft com o bridge.
+The real backend requires **two terminals plus the Minecraft window**:
 
-#### Opção A — cliente de desenvolvimento
+| Component | Purpose | Must remain open? |
+|---|---|---|
+| Terminal 1 | launches Minecraft with the Fabric bridge | yes |
+| Minecraft window | hosts the loaded single-player world | yes |
+| Terminal 2 | runs the Python Gymnasium environment | while the agent is running |
 
-É a forma mais rápida para desenvolver. No primeiro terminal:
+Starting Minecraft is not enough: you must enter a single-player world and wait until the player HUD and terrain are visible before calling `env.reset()`.
+
+### Option A — development client
+
+This is the quickest way to run the project during development.
+
+#### Terminal 1: start Minecraft
+
+From the repository root:
 
 ```bash
+export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
+export PATH="$JAVA_HOME/bin:$PATH"
+
 cd fabric
 ./gradlew runClient
 ```
 
-Quando o Minecraft abrir, crie ou entre em um mundo **single-player** em modo
-Survival. Mantenha o jogo e esse terminal abertos.
+Leave Terminal 1 running. A separate Minecraft window will open.
 
-#### Opção B — instalação normal do Minecraft
+#### Minecraft window: open a world
 
-Copie `fabric/build/libs/minecraft-gym-bridge-0.1.0.jar` para a pasta `mods` de
-uma instalação Fabric do Minecraft 1.21. Essa instalação também precisa conter
-a Fabric API. Inicie o jogo pelo launcher e entre em um mundo single-player em
-modo Survival.
+1. Click **Singleplayer**.
+2. Create or open a world.
+3. Make sure the player is in **Survival** mode.
+4. Wait until the terrain and player HUD are fully visible.
+5. Leave Minecraft open inside the world.
 
-## Teste rápido
+The title screen does not satisfy this requirement. If Python connects while Minecraft is still at the title screen, the bridge returns:
 
-Com o bridge carregado e o jogador dentro do mundo, abra um **segundo terminal**:
+```text
+Open a single-player world before using the bridge
+```
+
+#### Terminal 2: run the Gym environment
+
+Open a new terminal and return to the repository root:
 
 ```bash
-cd Minecraft-Survival-Gym
+cd /path/to/Minecraft-Survival-Gym
 uv run python scripts/smoke_env.py --steps 20
 ```
 
-Uma execução correta começa com uma saída semelhante a:
+Do not close Terminal 1 or the Minecraft window while this command is running.
+
+A successful run starts with output similar to:
 
 ```text
 reset tick=... seed=... rgb=(128, 128, 3)
 step=1 tick=... reward=... terminated=False truncated=False
 ```
 
-## Problemas comuns
+### Option B — regular Minecraft installation
 
-### `Gradle requires JVM 17 or later` / `configured to use JVM 8`
+1. Install Fabric Loader for Minecraft 1.21.
+2. Place Fabric API in that installation's `mods` directory.
+3. Copy `fabric/build/libs/minecraft-gym-bridge-0.1.0.jar` into the same `mods` directory.
+4. Launch Minecraft with the Fabric profile.
+5. Enter a single-player Survival world and wait for it to finish loading.
+6. Run the Python command from Terminal 2 as shown above.
 
-O Gradle encontrou uma instalação antiga do Java. Selecione explicitamente o
-JDK 21 antes de executar o wrapper:
-
-```bash
-export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
-export PATH="$JAVA_HOME/bin:$PATH"
-java -version
-cd fabric
-./gradlew build
-```
-
-### `ConnectionRefusedError: [Errno 61] Connection refused`
-
-O pacote Python está funcionando, mas não encontrou o bridge em
-`127.0.0.1:25570`. Confirme que:
-
-1. o Minecraft foi iniciado com o mod;
-2. o jogador já entrou em um mundo single-player;
-3. `./gradlew runClient` ou o launcher ainda está aberto;
-4. nenhum outro processo está usando a porta `25570`.
-
-O teste com `--backend mock` não abre o Minecraft nem testa a conexão com o mod.
-
-## Uso básico
+## Basic usage
 
 ```python
 import gymnasium as gym
-import minecraft_gym  # registra MinecraftSurvival-v0
+import minecraft_gym  # registers MinecraftSurvival-v0
 
 env = gym.make(
     "MinecraftSurvival-v0",
@@ -207,71 +209,71 @@ while not (terminated or truncated):
 env.close()
 ```
 
-Use `backend="mock"` para testes rápidos e determinísticos sem uma instância do Minecraft.
+Use `backend="mock"` for fast and deterministic tests that do not require Minecraft.
 
-## Espaço de ações
+## Action space
 
-O espaço é um `gymnasium.spaces.MultiDiscrete` com 15 componentes:
+The action space is a 15-component `gymnasium.spaces.MultiDiscrete`:
 
 ```text
 MultiDiscrete([3, 3, 2, 2, 2, 2, 2, 2, 2, 5, 5, 10, 5, 5, 3])
 ```
 
-O valor `0` representa `NOOP` em todos os componentes.
+The value `0` is `NOOP` for every component.
 
-| Índice | Ação | Valores |
+| Index | Control | Values |
 |---:|---|---|
-| 0 | Strafe | parado, esquerda, direita |
-| 1 | Movimento | parado, frente, trás |
-| 2 | Pular | não, sim |
-| 3 | Correr | não, sim |
-| 4 | Agachar | não, sim |
-| 5 | Atacar | não, sim |
-| 6 | Usar | não, sim |
-| 7 | Inventário | manter, alternar |
-| 8 | Soltar item | não, sim |
-| 9 | Câmera horizontal | neutro, ±6°, ±18° |
-| 10 | Câmera vertical | neutro, ±6°, ±18° |
-| 11 | Hotbar | manter ou selecionar slots 1–9 |
-| 12 | Cursor horizontal | neutro, lento ou rápido nos dois sentidos |
-| 13 | Cursor vertical | neutro, lento ou rápido nos dois sentidos |
-| 14 | Clique em GUI | nenhum, primário, secundário |
+| 0 | Strafe | idle, left, right |
+| 1 | Movement | idle, forward, backward |
+| 2 | Jump | no, yes |
+| 3 | Sprint | no, yes |
+| 4 | Sneak | no, yes |
+| 5 | Attack | no, yes |
+| 6 | Use | no, yes |
+| 7 | Inventory | keep, toggle |
+| 8 | Drop item | no, yes |
+| 9 | Horizontal camera | neutral, ±6°, ±18° |
+| 10 | Vertical camera | neutral, ±6°, ±18° |
+| 11 | Hotbar | keep or select slots 1–9 |
+| 12 | Horizontal GUI cursor | neutral, slow, or fast in either direction |
+| 13 | Vertical GUI cursor | neutral, slow, or fast in either direction |
+| 14 | GUI click | none, primary, secondary |
 
-O objeto canônico `ControlState` preserva deltas contínuos de mouse. Assim, demonstrações humanas mantêm mais informação do que a projeção discreta usada pela primeira versão da política.
+The canonical `ControlState` retains continuous mouse deltas. Human demonstrations therefore preserve more information than the discrete projection used by the initial policy space.
 
-## Espaço de observações
+## Observation space
 
-O ambiente retorna um `gymnasium.spaces.Dict`:
+The environment returns a `gymnasium.spaces.Dict`:
 
-| Campo | Tipo e forma | Conteúdo |
+| Field | Type and shape | Contents |
 |---|---|---|
-| `rgb` | `uint8[H, W, 3]` | imagem renderizada em RGB |
-| `vitals` | `float32[8]` | vida, fome, armadura, ar, XP e flags corporais |
-| `pose` | `float32[10]` | posição, velocidade, câmera, contato com o chão e queda |
-| `inventory_ids` | `int32[36]` | identificadores dos itens |
-| `inventory_counts` | `int32[36]` | quantidade em cada slot |
-| `equipped_slot` | `Discrete(9)` | slot ativo da hotbar |
-| `ui_mode` | `Discrete(8)` | jogo, inventário, container, chat, morte ou outra tela |
+| `rgb` | `uint8[H, W, 3]` | rendered RGB frame |
+| `vitals` | `float32[8]` | health, hunger, armor, air, XP, and body flags |
+| `pose` | `float32[10]` | position, velocity, camera, ground contact, and fall state |
+| `inventory_ids` | `int32[36]` | item registry identifiers |
+| `inventory_counts` | `int32[36]` | item count for each slot |
+| `equipped_slot` | `Discrete(9)` | selected hotbar slot |
+| `ui_mode` | `Discrete(8)` | gameplay, inventory, container, chat, death, or other screen |
 
-O dicionário `info` inclui:
+The `info` dictionary includes:
 
-- tick atual e seed real do mundo;
-- eventos, como dano, morte e aumento de inventário;
-- decomposição dos termos da recompensa;
-- `policy_action`, `human_action` e `executed_action`;
-- `control_source`, indicando se o controle veio do agente ou do humano.
+- current tick and actual world seed;
+- events such as damage, death, and inventory increases;
+- individual reward terms;
+- `policy_action`, `human_action`, and `executed_action`;
+- `control_source`, indicating whether the agent or a human controlled the step.
 
-## Modos de controle
+## Control modes
 
-| Modo | Comportamento |
+| Mode | Behavior |
 |---|---|
-| `agent` | executa somente a ação enviada pela política |
-| `human` | ignora a ação da política e registra teclado/mouse |
-| `dagger` | usa a política normalmente e aceita intervenção humana |
+| `agent` | executes only the action supplied by the policy |
+| `human` | ignores the policy action and records keyboard/mouse input |
+| `dagger` | uses the policy by default and accepts human intervention |
 
-### Gravação de demonstrações
+### Recording demonstrations
 
-Mantenha a janela do Minecraft em foco e execute:
+Keep Minecraft focused and inside a loaded world. In Terminal 2, run:
 
 ```bash
 uv run python scripts/record_human.py \
@@ -280,7 +282,7 @@ uv run python scripts/record_human.py \
   --output datasets/demonstrations
 ```
 
-Para coletar correções humanas durante a execução de uma política, use:
+To collect human corrections during policy execution:
 
 ```bash
 uv run python scripts/record_human.py \
@@ -289,33 +291,33 @@ uv run python scripts/record_human.py \
   --output datasets/dagger
 ```
 
-Cada episódio produz um arquivo `.npz` e metadados `.json`. A gravação é atômica, reduzindo o risco de datasets parcialmente escritos.
+Each episode produces a compressed `.npz` archive and a `.json` metadata file. Episodes are committed atomically to reduce the chance of partially written datasets.
 
-Principais arrays:
+Main arrays:
 
-| Campo | Uso |
+| Field | Purpose |
 |---|---|
-| `actions` | ação originalmente enviada ao ambiente |
-| `policy_actions` | ação da política projetada no espaço discreto |
-| `human_actions` | ação humana projetada no espaço discreto |
-| `executed_actions` | ação efetivamente executada |
-| `policy_controls` | controle canônico contínuo da política |
-| `human_controls` | teclado e deltas contínuos do mouse |
-| `executed_controls` | controle canônico efetivamente aplicado |
-| `human_action_present` | máscara de disponibilidade/intervenção humana |
+| `actions` | action originally submitted to the environment |
+| `policy_actions` | policy action projected onto the discrete action space |
+| `human_actions` | human action projected onto the discrete action space |
+| `executed_actions` | action actually executed by the game |
+| `policy_controls` | continuous canonical policy controls |
+| `human_controls` | keyboard state and continuous mouse deltas |
+| `executed_controls` | canonical controls actually applied |
+| `human_action_present` | mask indicating human action availability/intervention |
 
 > [!NOTE]
-> Bloquear a tela não impede testes e treinamento puramente Python, mas o Minecraft pode interromper a renderização. Captura RGB e entrada física de teclado/mouse requerem uma sessão gráfica desbloqueada.
+> Locking the screen does not prevent Python-only tests or training, but Minecraft may stop rendering. RGB capture and physical keyboard/mouse demonstrations require an unlocked graphical session.
 
-## Recompensas
+## Rewards
 
-A recompensa padrão é deliberadamente simples:
+The default reward is deliberately conservative:
 
-- pequeno bônus por permanecer vivo;
-- penalidade proporcional à perda de vida;
-- penalidade maior por morte.
+- a small reward for remaining alive;
+- a penalty proportional to health lost;
+- a larger penalty for death.
 
-Uma estratégia diferente pode ser injetada sem alterar o ambiente:
+A different strategy can be injected without modifying the environment:
 
 ```python
 from minecraft_gym import MinecraftSurvivalEnv
@@ -338,83 +340,112 @@ class MyReward:
 env = MinecraftSurvivalEnv(reward_function=MyReward())
 ```
 
-Essa separação permite evoluir para recompensas semânticas produzidas por um VLM/LLM, objetivos intermediários e conhecimento recuperado de guias de sobrevivência, sem acoplar esses experimentos ao bridge do Minecraft.
+This separation makes it possible to experiment with VLM/LLM-generated semantic rewards, intermediate objectives, and knowledge retrieved from survival guides without coupling those experiments to the Minecraft bridge.
 
-## Semântica temporal e episódios
+## Time and episode semantics
 
-Durante uma sessão Gym, o bridge congela o servidor integrado e avança exatamente `frame_skip` ticks para cada chamada de `step()`.
+During a Gym session, the bridge freezes the integrated server and advances exactly `frame_skip` ticks for each `step()` call.
 
-- `terminated=True`: o jogador morreu;
-- `truncated=True`: o episódio atingiu um limite operacional, como `max_episode_steps`.
+- `terminated=True`: the player died;
+- `truncated=True`: an operational limit such as `max_episode_steps` was reached.
 
-### Reset
+### Reset behavior
 
-A versão atual implementa um **soft reset**. Ela:
+The current version implements a **soft reset**. It:
 
-- força o jogador para Survival;
-- retorna ao ponto inicial da sessão;
-- limpa inventário e efeitos;
-- restaura vida, fome e saturação;
-- restaura horário e clima.
+- forces Survival mode;
+- returns the player to the session's initial position;
+- clears inventory and status effects;
+- restores health, hunger, and saturation;
+- restores time and weather.
 
-O reset ainda não reconstrói blocos modificados nem troca a seed do mundo aberto. O campo `requested_seed_matches_world` informa se a seed solicitada coincide com a seed real. Para experimentos que exigem terreno idêntico, inicie cada lote a partir de uma cópia limpa do save.
+The reset does not yet rebuild modified blocks or change the seed of the currently loaded world. `requested_seed_matches_world` reports whether the requested seed matches the actual world seed. For experiments requiring identical terrain, start each batch from a clean copy of the save.
 
-## Configuração do ambiente
+## Environment configuration
 
-| Parâmetro | Padrão | Descrição |
+| Parameter | Default | Description |
 |---|---:|---|
-| `backend` | `"socket"` | backend real ou `"mock"` |
-| `host` | `127.0.0.1` | endereço do bridge |
-| `port` | `25570` | porta TCP local |
-| `bridge_timeout` | `30.0` | timeout da conexão em segundos |
-| `width` | `128` | largura da observação RGB |
-| `height` | `128` | altura da observação RGB |
-| `frame_skip` | `4` | ticks executados por ação |
-| `max_episode_steps` | `9000` | limite interno do episódio |
-| `control_mode` | `"agent"` | `agent`, `human` ou `dagger` |
-| `render_mode` | `None` | use `"rgb_array"` para `render()` |
-| `reward_function` | sobrevivência esparsa | estratégia substituível de recompensa |
+| `backend` | `"socket"` | real backend or `"mock"` |
+| `host` | `127.0.0.1` | bridge address |
+| `port` | `25570` | local TCP port |
+| `bridge_timeout` | `30.0` | connection timeout in seconds |
+| `width` | `128` | RGB observation width |
+| `height` | `128` | RGB observation height |
+| `frame_skip` | `4` | ticks executed per action |
+| `max_episode_steps` | `9000` | internal episode limit |
+| `control_mode` | `"agent"` | `agent`, `human`, or `dagger` |
+| `render_mode` | `None` | use `"rgb_array"` for `render()` |
+| `reward_function` | sparse survival | pluggable reward strategy |
 
-## Desenvolvimento
+## Troubleshooting
 
-Execute os testes Python:
+### `Gradle requires JVM 17 or later` / `configured to use JVM 8`
+
+Gradle found an older Java installation. Select JDK 21 before running the wrapper:
+
+```bash
+export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
+export PATH="$JAVA_HOME/bin:$PATH"
+java -version
+
+cd fabric
+./gradlew build
+```
+
+### `ConnectionRefusedError: [Errno 61] Connection refused`
+
+The Python package could not find the bridge at `127.0.0.1:25570`. Confirm that:
+
+1. Terminal 1 is still running `./gradlew runClient`, or Minecraft was launched from a Fabric installation containing the bridge mod;
+2. the Minecraft process has finished starting;
+3. no other process is using port `25570`.
+
+### `Open a single-player world before using the bridge`
+
+Python successfully connected to the mod, but Minecraft is still at the title screen or not fully inside a world. In the Minecraft window, click **Singleplayer**, load or create a world, wait for the player HUD and terrain to appear, and then rerun the Python command from Terminal 2.
+
+The `--backend mock` smoke test neither launches Minecraft nor tests the Fabric connection.
+
+## Development
+
+Run the Python test suite:
 
 ```bash
 uv run pytest
 ```
 
-Compile e valide o mod:
+Build and validate the Fabric mod:
 
 ```bash
 cd fabric
 ./gradlew build
 ```
 
-Estrutura principal:
+Repository structure:
 
 ```text
-src/minecraft_gym/       ambiente, ações, reward, recorder e transporte
-fabric/                  mod Fabric e bridge local
-scripts/smoke_env.py     teste rápido real ou simulado
-scripts/record_human.py  coleta de demonstrações humanas
-tests/                   testes do contrato Gym e do protocolo
-docs/protocol.md         especificação do protocolo TCP
+src/minecraft_gym/       environment, actions, rewards, recorder, and transport
+fabric/                  Fabric mod and local bridge
+scripts/smoke_env.py     real or simulated smoke test
+scripts/record_human.py  human demonstration collection
+tests/                   Gym contract and protocol tests
+docs/protocol.md         TCP protocol specification
 ```
 
 ## Roadmap
 
-- reset rígido e restauração automática de mundos;
-- ambientes vetorizados e múltiplas instâncias do Minecraft;
-- wrappers de ações hierárquicas e temporais;
-- baselines de behavior cloning e reinforcement learning;
-- avaliação e geração dinâmica de recompensas com VLMs;
-- planejamento de submetas com modelos de linguagem e retrieval de guias;
-- ferramentas de inspeção, replay e curadoria de demonstrações.
+- hard resets and automatic world restoration;
+- vectorized environments and multiple Minecraft instances;
+- hierarchical and temporal action wrappers;
+- behavior cloning and reinforcement learning baselines;
+- VLM-based reward evaluation and generation;
+- language-model subgoal planning with survival-guide retrieval;
+- demonstration inspection, replay, and curation tools.
 
-## Protocolo
+## Protocol
 
-A especificação do bridge está em [`docs/protocol.md`](docs/protocol.md).
+The bridge specification is available in [`docs/protocol.md`](docs/protocol.md).
 
-## Contribuições
+## Contributing
 
-Issues e pull requests são bem-vindos. Ao relatar um problema, inclua a versão do Minecraft, Fabric Loader, Fabric API, Java, sistema operacional e os passos mínimos para reprodução.
+Issues and pull requests are welcome. When reporting a problem, include the Minecraft, Fabric Loader, Fabric API, Java, and operating system versions, along with minimal reproduction steps.
