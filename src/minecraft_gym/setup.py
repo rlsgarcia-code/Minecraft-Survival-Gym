@@ -16,7 +16,7 @@ from pathlib import Path
 MINECRAFT_VERSION = "1.21"
 FABRIC_API_VERSION = "0.102.0+1.21"
 FABRIC_INSTALLER_VERSION = "1.1.2"
-BRIDGE_VERSION = "0.1.0"
+BRIDGE_VERSION = "0.1.1"
 FABRIC_MAVEN = "https://maven.fabricmc.net"
 FABRIC_API_NAME = f"fabric-api-{FABRIC_API_VERSION}.jar"
 BRIDGE_NAME = f"minecraft-gym-bridge-{BRIDGE_VERSION}.jar"
@@ -32,7 +32,7 @@ BRIDGE_URL = (
     "https://github.com/rlsgarcia-code/Minecraft-Survival-Gym/releases/"
     f"download/v{BRIDGE_VERSION}/{BRIDGE_NAME}"
 )
-BRIDGE_SHA256 = "fd2caf878c288e21c622729b65114b5f29f0376b953a1aa71214506b06c2d440"
+BRIDGE_SHA256 = "71ff55d9b8500e5103a9d5aec22d7e21b32725e869432d290d80abf301e590cc"
 FABRIC_API_SHA256 = "7ec0e5a11e77957fe1ed0328487921a8211bb7eace14298cd74635bec61a3f26"
 FABRIC_INSTALLER_SHA256 = "61e035bf7bf70153e127440ce34de47c9036f0a2d0c65d1529454bd35ceefe4f"
 MAX_DOWNLOAD_BYTES = 32 * 1024 * 1024
@@ -120,13 +120,34 @@ def _has_fabric_loader(game_dir: Path) -> bool:
     )
 
 
-def _install_mod(mods_dir: Path, filename: str, url: str, checksum: str | None) -> None:
+def _backup_obsolete(paths: list[Path], backup_dir: Path) -> None:
+    if not paths:
+        return
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    for path in paths:
+        backup = backup_dir / path.name
+        if backup.exists():
+            raise RuntimeError(f"Backup already exists; move it before setup: {backup}")
+        path.replace(backup)
+        print(f"Replaced; previous version preserved at: {backup}", flush=True)
+
+
+def _install_mod(
+    mods_dir: Path,
+    filename: str,
+    url: str,
+    checksum: str | None,
+    *,
+    obsolete: list[Path] | None = None,
+    backup_dir: Path | None = None,
+) -> None:
     target = mods_dir / filename
     if target.exists():
         if not target.is_file():
             raise RuntimeError(f"Not a regular file: {target}")
         if checksum and hashlib.sha256(target.read_bytes()).hexdigest() != checksum:
             raise RuntimeError(f"Existing file does not match the expected release: {target}")
+        _backup_obsolete(obsolete or [], backup_dir or mods_dir.parent / ".minecraft-gym-backup")
         print(f"Already present: {target}", flush=True)
         return
     data = _verified_download(url, checksum)
@@ -135,6 +156,7 @@ def _install_mod(mods_dir: Path, filename: str, url: str, checksum: str | None) 
         temp.write(data)
         staged = Path(temp.name)
     try:
+        _backup_obsolete(obsolete or [], backup_dir or mods_dir.parent / ".minecraft-gym-backup")
         if target.exists():
             raise RuntimeError(f"File appeared during setup; refusing to overwrite: {target}")
         staged.replace(target)
@@ -151,9 +173,14 @@ def setup(game_dir: Path, *, dry_run: bool = False) -> None:
             "Install and open the official Launcher once, or pass --game-dir."
         )
     mods_dir = game_dir / "mods"
+    upgradeable_bridge = {f"minecraft-gym-bridge-0.1.0.jar"}
+    obsolete_bridge: list[Path] = []
     for pattern, target in (("fabric-api-*.jar", FABRIC_API_NAME),
                             ("minecraft-gym-bridge-*.jar", BRIDGE_NAME)):
         conflicts = [p.name for p in mods_dir.glob(pattern) if p.name != target]
+        if pattern.startswith("minecraft-gym-bridge"):
+            obsolete_bridge = [mods_dir / name for name in conflicts if name in upgradeable_bridge]
+            conflicts = [name for name in conflicts if name not in upgradeable_bridge]
         if conflicts:
             raise RuntimeError(
                 f"Conflicting mod in {mods_dir}: {', '.join(conflicts)}. "
@@ -181,7 +208,14 @@ def setup(game_dir: Path, *, dry_run: bool = False) -> None:
         if result.returncode != 0 or not _has_fabric_loader(game_dir):
             raise RuntimeError("Fabric Installer failed; no mods were installed.")
     _install_mod(mods_dir, FABRIC_API_NAME, FABRIC_API_URL, FABRIC_API_SHA256)
-    _install_mod(mods_dir, BRIDGE_NAME, BRIDGE_URL, BRIDGE_SHA256)
+    _install_mod(
+        mods_dir,
+        BRIDGE_NAME,
+        BRIDGE_URL,
+        BRIDGE_SHA256,
+        obsolete=obsolete_bridge,
+        backup_dir=game_dir / ".minecraft-gym-backup",
+    )
     print(
         "Setup complete. Run `minecraft-gym start`, select the Minecraft 1.21 "
         "Fabric profile, click Play, and enter a single-player Survival world.",

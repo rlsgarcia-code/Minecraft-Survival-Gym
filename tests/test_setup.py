@@ -96,6 +96,26 @@ def test_setup_rejects_modified_api(tmp_path) -> None:
         installer.setup(game_dir)
 
 
+def test_setup_upgrades_previous_bridge_and_preserves_backup(monkeypatch, tmp_path) -> None:
+    game_dir = _launcher_dir(tmp_path / "minecraft")
+    _fabric_loader(game_dir)
+    mods = game_dir / "mods"
+    mods.mkdir()
+    old_bridge = mods / "minecraft-gym-bridge-0.1.0.jar"
+    old_bridge.write_bytes(b"old bridge")
+    monkeypatch.setattr(installer, "FABRIC_API_SHA256", hashlib.sha256(b"api").hexdigest())
+    monkeypatch.setattr(installer, "BRIDGE_SHA256", hashlib.sha256(b"new bridge").hexdigest())
+    monkeypatch.setattr(
+        installer,
+        "_verified_download",
+        lambda url, checksum=None: b"api" if url == installer.FABRIC_API_URL else b"new bridge",
+    )
+    installer.setup(game_dir)
+    assert not old_bridge.exists()
+    assert (mods / installer.BRIDGE_NAME).read_bytes() == b"new bridge"
+    assert (game_dir / ".minecraft-gym-backup" / old_bridge.name).read_bytes() == b"old bridge"
+
+
 def test_verified_download_rejects_bad_checksum(monkeypatch) -> None:
     monkeypatch.setattr(installer, "_download", lambda url: b"jar")
     with pytest.raises(RuntimeError, match="SHA-256 mismatch"):

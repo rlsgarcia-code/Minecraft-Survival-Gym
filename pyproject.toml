@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "minecraft-gym"
-version = "0.3.0"
+version = "0.3.1"
 description = "A Gymnasium environment and bridge protocol for controlling Minecraft Java Edition."
 readme = "README.md"
 requires-python = ">=3.10"

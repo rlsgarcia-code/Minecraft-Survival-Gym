@@ -167,7 +167,9 @@ final class BridgeRuntime implements AutoCloseable {
         ActiveStep step = activeStep;
         activeStep = null;
         try {
-            ControlState.releaseInjectedKeys(minecraft);
+            if ("agent".equals(step.controlSource)) {
+                ControlState.releaseInjectedKeys(minecraft);
+            }
             boolean terminated = minecraft.player == null
                     || minecraft.player.isDeadOrDying()
                     || minecraft.player.getHealth() <= 0;
@@ -429,7 +431,9 @@ final class BridgeRuntime implements AutoCloseable {
             if (serverStepStarted
                     && server.tickRateManager().frozenTicksToRun() == 0
                     && --settleClientTicks <= 0) {
-                ControlState.releaseInjectedKeys(minecraft);
+                if ("agent".equals(controlSource)) {
+                    ControlState.releaseInjectedKeys(minecraft);
+                }
             }
         }
 

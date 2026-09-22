@@ -77,17 +77,17 @@ run `minecraft-gym start` and `./gradlew runClient` as consecutive setup steps.
 
 | Route | Use it when | Minecraft command | Where worlds are saved |
 |---|---|---|---|
-| [Published release](#published-release-regular-launcher) | You want to use the installed Python package | `minecraft-gym setup`, then `minecraft-gym start` (version 0.3.0+) | Your Launcher installation's game directory |
+| [Published release](#published-release-regular-launcher) | You want to use the installed Python package | `minecraft-gym setup`, then `minecraft-gym start` (version 0.3.1+) | Your Launcher installation's game directory |
 | [Source checkout](#development-installation-from-source) | You are developing this repository | `cd fabric && ./gradlew runClient` | `fabric/run/saves/` |
 
 ### Published release (regular Launcher)
 
-#### One-time setup command (version 0.3.0 and later)
+#### One-time setup command (version 0.3.1 and later)
 
 The normal Launcher flow is:
 
 ```bash
-pip install minecraft-gym==0.3.0
+python -m pip install --upgrade minecraft-gym==0.3.1
 minecraft-gym setup
 minecraft-gym start
 ```
@@ -100,6 +100,10 @@ open the official Launcher once before running it. Java 21 must be available
 for the one-time Fabric Loader installation. You can preview the target with
 `minecraft-gym setup --dry-run` or choose a nondefault Launcher directory with
 `minecraft-gym setup --game-dir /path/to/minecraft`.
+
+Running `setup` again upgrades the project's own bridge mod when a supported
+older release is present. The previous `.jar` is preserved outside `mods` in
+the `.minecraft-gym-backup` directory.
 
 The command cannot create a Minecraft account or click through the Launcher:
 after `minecraft-gym start`, select the **Minecraft 1.21 Fabric** profile,
