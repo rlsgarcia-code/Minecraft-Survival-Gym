@@ -71,54 +71,78 @@ Fabric development client from source.
 
 ## Installation
 
-### Published release
+Choose **one** route. The published package opens your regular Minecraft
+Launcher; a source checkout runs a separate Fabric development client. Do not
+run `minecraft-gym start` and `./gradlew runClient` as consecutive setup steps.
 
-Install the Python environment from PyPI:
+| Route | Use it when | Minecraft command | Where worlds are saved |
+|---|---|---|---|
+| [Published release](#published-release-regular-launcher) | You want to use the installed Python package | `minecraft-gym setup`, then `minecraft-gym start` (version 0.3.0+) | Your Launcher installation's game directory |
+| [Source checkout](#development-installation-from-source) | You are developing this repository | `cd fabric && ./gradlew runClient` | `fabric/run/saves/` |
+
+### Published release (regular Launcher)
+
+#### One-time setup command (version 0.3.0 and later)
+
+The normal Launcher flow is:
 
 ```bash
-pip install minecraft-gym==0.2.0
-```
-
-Download
-[`minecraft-gym-bridge-0.1.0.jar`](https://github.com/rlsgarcia-code/Minecraft-Survival-Gym/releases/download/v0.1.0/minecraft-gym-bridge-0.1.0.jar)
-from the `v0.1.0` release and place it in the Minecraft Fabric `mods`
-directory together with Fabric API.
-
-Version `0.2.0` includes an interactive start command:
-
-```bash
+pip install minecraft-gym==0.3.0
+minecraft-gym setup
 minecraft-gym start
 ```
 
-It offers **1. Record keyboard/mouse** or **2. Run an agent** after you enter
-a Survival world. You can also select a mode directly. To record a
-keyboard/mouse demonstration:
+`minecraft-gym setup` installs Fabric Loader for Minecraft 1.21, the matching
+Fabric API, and the bridge mod into the official Minecraft Launcher's game
+directory. It verifies the downloaded files, leaves existing worlds untouched,
+and refuses conflicting mod versions rather than deleting them. Install and
+open the official Launcher once before running it. Java 21 must be available
+for the one-time Fabric Loader installation. You can preview the target with
+`minecraft-gym setup --dry-run` or choose a nondefault Launcher directory with
+`minecraft-gym setup --game-dir /path/to/minecraft`.
+
+The command cannot create a Minecraft account or click through the Launcher:
+after `minecraft-gym start`, select the **Minecraft 1.21 Fabric** profile,
+click **Play**, create or enter a single-player Survival world, wait for the
+terrain and HUD, then press Enter in the terminal and choose recording or an
+agent. No repository checkout or Gradle command is needed.
+
+#### Earlier PyPI release (version 0.2.0)
+
+1. Install Minecraft **Java Edition 1.21** and [Fabric Loader for 1.21](https://docs.fabricmc.net/players/installing-fabric). The installer must create a Fabric profile in the Minecraft Launcher.
+2. Download [Fabric API for Minecraft 1.21](https://docs.fabricmc.net/players/installing-mods) and the [`minecraft-gym-bridge-0.1.0.jar`](https://github.com/rlsgarcia-code/Minecraft-Survival-Gym/releases/download/v0.1.0/minecraft-gym-bridge-0.1.0.jar) release asset. Put **both `.jar` files** in that installation's `mods` directory. The default macOS location is `~/Library/Application Support/minecraft/mods/`; a custom Launcher game directory has its own `mods` folder.
+3. Install the Python package in the environment where you will run your agent:
+
+   ```bash
+   pip install minecraft-gym==0.2.0
+   ```
+
+4. Start the interactive helper in a terminal:
+
+   ```bash
+   minecraft-gym start
+   ```
+
+   On macOS it opens the Minecraft Launcher. Select the **1.21 Fabric** profile,
+   click **Play**, create or open a **single-player Survival** world, and wait
+   until terrain and the player HUD are visible. The title screen is not enough.
+   Return to the terminal and press Enter when prompted. Choose **1** to record
+   keyboard/mouse actions or **2** to run an agent script. Keep Minecraft
+   focused while recording.
+
+To select a mode without the final menu, use:
 
 ```bash
 minecraft-gym start record --output datasets/demonstrations --steps 9000
-```
-
-To run your own Python agent:
-
-```bash
 minecraft-gym start agent path/to/agent.py
 ```
 
-On macOS, `start` opens the Minecraft Launcher. Select the Minecraft 1.21
-Fabric profile, click **Play**, and enter a single-player Survival world.
-The command waits for the bridge, then asks you to press Enter after the
-terrain and player HUD are visible. It then begins recording or runs the
-agent script. Keep the Minecraft window focused while recording keyboard and
-mouse input. The agent script itself must create and close its Gymnasium
-environment; `start agent` does not supply a built-in policy.
-
-On Linux, `start` uses `minecraft-launcher` if it is on `PATH`.
-Otherwise pass `--launcher` with the launch command; on macOS this option
-accepts an application name or path. If Minecraft is already open, use
-`minecraft-gym start --no-launch record` or
-`minecraft-gym start --no-launch agent path/to/agent.py`.
-The CLI does not install Minecraft, Fabric Loader, Fabric API, or the bridge
-mod.
+Run **one** of these commands per session, not both. The agent script must
+create and close its own Gymnasium environment; `start agent` does not supply
+a built-in policy. On Linux, `start` uses `minecraft-launcher` if it is on
+`PATH`; otherwise pass `--launcher`. If Minecraft is already open, add
+`--no-launch` after `start`. The Python package does **not** install Minecraft,
+Fabric Loader, Fabric API, or the bridge mod.
 
 Recording uses `reset()` before its first step. This soft reset clears the
 player inventory, restores vitals, time, and weather, and moves the player to
@@ -130,7 +154,8 @@ To check the connection without creating a file:
 python -c 'import gymnasium as gym, minecraft_gym; env = gym.make("minecraft_gym/MinecraftSurvival-v0"); observation, info = env.reset(seed=42); print(observation["rgb"].shape, info["tick"]); env.close()'
 ```
 
-This command only checks a running world; it does not launch Minecraft.
+This command only checks a running world with the bridge mod loaded; it does
+not launch Minecraft.
 To stop a `start` session, press `Ctrl+C` and close Minecraft normally.
 The repository's `stop_dev.sh` command manages only processes started by the
 source-development launcher.
@@ -153,13 +178,9 @@ uv run python scripts/smoke_env.py --backend mock --steps 20
 
 #### 2. Select JDK 21
 
-Check the active Java version:
+Minecraft 1.21 development requires JDK 21. On macOS, `fabric/gradlew` now selects an installed JDK 21 for that command even if the shell's `JAVA_HOME` points to an older JDK. It checks the macOS Java registry and Homebrew's `openjdk@21`. Verify the JVM used by Gradle with `cd fabric && ./gradlew --version`; the `JVM` line should report 21.
 
-```bash
-java -version
-```
-
-The first line must report Java 21. On macOS with Homebrew:
+If JDK 21 is not installed, install it with Homebrew:
 
 ```bash
 brew install openjdk@21
@@ -168,14 +189,35 @@ export PATH="$JAVA_HOME/bin:$PATH"
 java -version
 ```
 
-To keep this configuration across terminal sessions, add the two `export` lines to `~/.zshrc`.
+The `export` lines are optional for direct Gradle commands on macOS, but are useful when other Java commands also need JDK 21. The wrapper does not modify `~/.zshrc`.
 
-#### 3. Build the Fabric mod
+#### 3. Run the development client
+
+From the repository root, start the development client in Terminal 1:
+
+```bash
+cd fabric
+./gradlew runClient
+```
+
+`runClient` builds and loads the bridge mod automatically. You do **not** need
+to install the published bridge `.jar` into this client's `mods` folder, and
+you do not need to run `minecraft-gym start` for this route. When Minecraft
+opens, create or select a single-player **Survival** world and wait until the
+terrain and player HUD are visible. Keep this terminal and Minecraft open.
+
+In Terminal 2, from the repository root, verify the real connection:
+
+```bash
+uv run python scripts/smoke_env.py --steps 20
+```
+
+The development world's save directory is `fabric/run/saves/`. If you also
+want a standalone mod `.jar`, build it separately:
 
 ```bash
 cd fabric
 ./gradlew build
-cd ..
 ```
 
 The mod artifact is written to:
@@ -245,12 +287,9 @@ This is the quickest way to run the project during development.
 
 #### Terminal 1: start Minecraft
 
-From the repository root:
+From the repository root (after installing JDK 21 as described above):
 
 ```bash
-export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
-export PATH="$JAVA_HOME/bin:$PATH"
-
 cd fabric
 ./gradlew runClient
 ```

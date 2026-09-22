@@ -18,6 +18,7 @@ import gymnasium as gym
 import minecraft_gym
 from minecraft_gym.actions import noop_action
 from minecraft_gym.recording import TrajectoryRecorder
+from minecraft_gym.setup import default_game_dir, setup
 from minecraft_gym.transport import (
     BridgeProtocolError,
     DEFAULT_HOST,
@@ -30,6 +31,16 @@ from minecraft_gym.transport import (
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="minecraft-gym")
     commands = parser.add_subparsers(dest="command", required=True)
+    install = commands.add_parser(
+        "setup", help="Install Fabric Loader and the bridge mods for the official Launcher"
+    )
+    install.add_argument(
+        "--game-dir", type=Path,
+        help="Minecraft Launcher game directory (defaults to the OS standard location)",
+    )
+    install.add_argument(
+        "--dry-run", action="store_true", help="Show the target without changing files"
+    )
     start = commands.add_parser(
         "start", help="Open Minecraft and start recording or an agent"
     )
@@ -211,6 +222,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "setup":
+            setup(args.game_dir or default_game_dir(), dry_run=args.dry_run)
+            return 0
         if not args.no_launch:
             _launch_minecraft(args.launcher)
         _wait_for_bridge(args.host, args.port, args.bridge_timeout)
