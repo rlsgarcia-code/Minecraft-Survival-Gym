@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import platform
 import shlex
 import shutil
@@ -18,7 +19,14 @@ import gymnasium as gym
 import minecraft_gym
 from minecraft_gym.actions import noop_action
 from minecraft_gym.recording import TrajectoryRecorder
-from minecraft_gym.setup import default_game_dir, setup
+from minecraft_gym.setup import (
+    BRIDGE_NAME,
+    FABRIC_API_NAME,
+    MINECRAFT_VERSION,
+    _has_fabric_loader,
+    default_game_dir,
+    setup,
+)
 from minecraft_gym.transport import (
     BridgeProtocolError,
     DEFAULT_HOST,
@@ -26,6 +34,7 @@ from minecraft_gym.transport import (
     PROTOCOL_VERSION,
     LengthPrefixedJsonConnection,
 )
+from minecraft_gym.worlds import clone_world, saves_directory, snapshot_world
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -41,6 +50,40 @@ def _parser() -> argparse.ArgumentParser:
     install.add_argument(
         "--dry-run", action="store_true", help="Show the target without changing files"
     )
+    install.add_argument(
+        "--bridge-jar",
+        type=Path,
+        help="Install a verified locally built bridge JAR instead of downloading it",
+    )
+    doctor = commands.add_parser(
+        "doctor", help="Inspect the local Launcher, mods, saves, and live bridge"
+    )
+    doctor.add_argument(
+        "--game-dir", type=Path,
+        help="Minecraft Launcher game directory (defaults to the OS standard location)",
+    )
+    doctor.add_argument("--host", default=DEFAULT_HOST)
+    doctor.add_argument("--port", type=int, default=DEFAULT_PORT)
+
+    world = commands.add_parser(
+        "world", help="Create reproducible world templates and fresh clones"
+    )
+    world_commands = world.add_subparsers(dest="world_command", required=True)
+    snapshot = world_commands.add_parser(
+        "snapshot", help="Copy a closed save into a verified template"
+    )
+    snapshot.add_argument("source", type=Path)
+    snapshot.add_argument("--output", type=Path, required=True)
+    clone = world_commands.add_parser(
+        "clone", help="Create a fresh Launcher save from a verified template"
+    )
+    clone.add_argument("template", type=Path)
+    clone.add_argument(
+        "--saves-dir", type=Path,
+        help="Minecraft saves directory (defaults to the official Launcher)",
+    )
+    clone.add_argument("--name", help="Optional exact name for the cloned save")
+
     start = commands.add_parser(
         "start", help="Open Minecraft and start recording or an agent"
     )
@@ -69,6 +112,10 @@ def _parser() -> argparse.ArgumentParser:
         output=Path("datasets/demonstrations"),
         steps=9000,
         seed=42,
+        width=128,
+        height=128,
+        frame_skip=4,
+        metadata=[],
         script_args=[],
     )
     modes = start.add_subparsers(dest="mode")
@@ -79,6 +126,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     record.add_argument("--steps", type=int, default=9000)
     record.add_argument("--seed", type=int, default=42)
+    record.add_argument("--width", type=int, default=128)
+    record.add_argument("--height", type=int, default=128)
+    record.add_argument("--frame-skip", type=int, default=4)
+    record.add_argument(
+        "--metadata",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Repeatable string metadata stored with the demonstration",
+    )
 
     agent = modes.add_parser("agent", help="Run a Python agent script")
     agent.add_argument("script", type=Path)
@@ -151,9 +208,55 @@ def _wait_for_bridge(host: str, port: int, timeout: float) -> None:
         time.sleep(1)
 
 
+def _metadata(values: Sequence[str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for value in values:
+        key, separator, item = value.partition("=")
+        if not separator or not key.strip():
+            raise ValueError("--metadata values must use KEY=VALUE")
+        result[key.strip()] = item
+    return result
+
+
+def _doctor(args: argparse.Namespace) -> None:
+    game_dir = (args.game_dir or default_game_dir()).expanduser().resolve()
+    mods_dir = game_dir / "mods"
+    options = game_dir / "options.txt"
+    pause_setting = None
+    if options.is_file():
+        for line in options.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("pauseOnLostFocus:"):
+                pause_setting = line.partition(":")[2].strip().lower() == "true"
+    report = {
+        "package_version": getattr(minecraft_gym, "__version__", "unknown"),
+        "minecraft_version": MINECRAFT_VERSION,
+        "game_dir": str(game_dir),
+        "launcher_initialized": (game_dir / "launcher_profiles.json").is_file(),
+        "fabric_loader": _has_fabric_loader(game_dir),
+        "fabric_api": (mods_dir / FABRIC_API_NAME).is_file(),
+        "bridge_mod": (mods_dir / BRIDGE_NAME).is_file(),
+        "saves_dir": str(saves_directory(game_dir)),
+        "pause_on_lost_focus": pause_setting,
+        "bridge_listening": _bridge_responds(args.host, args.port),
+        "bridge_address": f"{args.host}:{args.port}",
+    }
+    print(json.dumps(report, indent=2, sort_keys=True))
+
+
+def _world(args: argparse.Namespace) -> None:
+    if args.world_command == "snapshot":
+        result = snapshot_world(args.source, args.output)
+    else:
+        target = args.saves_dir or saves_directory(default_game_dir())
+        result = clone_world(args.template, target, name=args.name)
+    print(json.dumps(result, indent=2, sort_keys=True))
+
+
 def _record(args: argparse.Namespace) -> None:
     if args.steps <= 0:
         raise ValueError("--steps must be positive")
+    if args.width <= 0 or args.height <= 0 or args.frame_skip <= 0:
+        raise ValueError("--width, --height, and --frame-skip must be positive")
     base = gym.make(
         minecraft_gym.ENV_ID,
         backend="socket",
@@ -162,11 +265,21 @@ def _record(args: argparse.Namespace) -> None:
         control_mode="human",
         max_episode_steps=args.steps,
         render_mode="rgb_array",
+        width=args.width,
+        height=args.height,
+        frame_skip=args.frame_skip,
     )
     env = TrajectoryRecorder(
         base,
         args.output,
-        metadata={"input_device": "keyboard_mouse", "control_mode": "human"},
+        metadata={
+            "input_device": "keyboard_mouse",
+            "control_mode": "human",
+            "width": args.width,
+            "height": args.height,
+            "frame_skip": args.frame_skip,
+            **_metadata(args.metadata),
+        },
     )
     interrupted = False
     try:
@@ -223,7 +336,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "setup":
-            setup(args.game_dir or default_game_dir(), dry_run=args.dry_run)
+            setup(
+                args.game_dir or default_game_dir(),
+                dry_run=args.dry_run,
+                bridge_jar=args.bridge_jar,
+            )
+            return 0
+        if args.command == "doctor":
+            _doctor(args)
+            return 0
+        if args.command == "world":
+            _world(args)
             return 0
         if not args.no_launch:
             _launch_minecraft(args.launcher)

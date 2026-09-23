@@ -106,7 +106,8 @@ final class BridgeServer implements AutoCloseable {
         response.addProperty("protocol_version", BridgeRuntime.PROTOCOL_VERSION);
         response.addProperty("minecraft_version", "1.21");
         response.add("capabilities", GSON.toJsonTree(new String[] {
-                "rgb", "human_input", "dagger", "survival_soft_reset", "frozen_tick_step"
+                "rgb", "human_input", "dagger", "survival_soft_reset", "frozen_tick_step",
+                "semantic_events", "privileged_context"
         }));
         return response;
     }

@@ -77,28 +77,30 @@ run `minecraft-gym start` and `./gradlew runClient` as consecutive setup steps.
 
 | Route | Use it when | Minecraft command | Where worlds are saved |
 |---|---|---|---|
-| [Published release](#published-release-regular-launcher) | You want to use the installed Python package | `minecraft-gym setup`, then `minecraft-gym start` (version 0.3.1+) | Your Launcher installation's game directory |
+| [Published release](#published-release-regular-launcher) | You want to use the installed Python package | `minecraft-gym setup`, then `minecraft-gym start` (version 0.3.2+) | Your Launcher installation's game directory |
 | [Source checkout](#development-installation-from-source) | You are developing this repository | `cd fabric && ./gradlew runClient` | `fabric/run/saves/` |
 
 ### Published release (regular Launcher)
 
-#### One-time setup command (version 0.3.1 and later)
+#### One-time setup command (version 0.3.2 and later)
 
 The normal Launcher flow is:
 
 ```bash
-python -m pip install --upgrade minecraft-gym==0.3.1
+python -m pip install --upgrade minecraft-gym==0.3.2
 minecraft-gym setup
-minecraft-gym start
+minecraft-gym doctor
 ```
 
 `minecraft-gym setup` installs Fabric Loader for Minecraft 1.21, the matching
 Fabric API, and the bridge mod into the official Minecraft Launcher's game
-directory. It verifies the downloaded files, leaves existing worlds untouched,
-and refuses conflicting mod versions rather than deleting them. Install and
-open the official Launcher once before running it. Java 21 must be available
-for the one-time Fabric Loader installation. You can preview the target with
-`minecraft-gym setup --dry-run` or choose a nondefault Launcher directory with
+directory. The bridge 0.1.2 is included and verified inside the Python wheel;
+users do not need Git, Gradle, a source checkout, or a separate bridge download.
+The setup command leaves existing worlds untouched and refuses conflicting mod
+versions rather than deleting them. Install and open the official Launcher once
+before running it. Java 21 must be available for the one-time Fabric Loader
+installation. You can preview the target with `minecraft-gym setup --dry-run`
+or choose a nondefault Launcher directory with
 `minecraft-gym setup --game-dir /path/to/minecraft`.
 
 Running `setup` again upgrades the project's own bridge mod when a supported
@@ -106,10 +108,40 @@ older release is present. The previous `.jar` is preserved outside `mods` in
 the `.minecraft-gym-backup` directory.
 
 The command cannot create a Minecraft account or click through the Launcher:
-after `minecraft-gym start`, select the **Minecraft 1.21 Fabric** profile,
-click **Play**, create or enter a single-player Survival world, wait for the
-terrain and HUD, then press Enter in the terminal and choose recording or an
-agent. No repository checkout or Gradle command is needed.
+after setup, run `minecraft-gym start`, select the **Minecraft 1.21 Fabric**
+profile, click **Play**, create or enter a single-player Survival world, wait
+for the terrain and HUD, then press Enter in the terminal and choose recording
+or an agent. No repository checkout or Gradle command is needed.
+
+#### Public command-line interface
+
+The installed package exposes reusable operations rather than project-specific
+scripts:
+
+```text
+minecraft-gym setup                 install/upgrade Fabric and the packaged bridge
+minecraft-gym doctor                inspect Launcher, mods, saves, focus pause and bridge
+minecraft-gym world snapshot        create a hash-verified template from a closed save
+minecraft-gym world clone           create a fresh verified save from a template
+minecraft-gym start record          record a keyboard/mouse demonstration
+minecraft-gym start agent           run an external Python policy
+```
+
+For example, create a reusable template and a disposable run without copying
+world directories by hand:
+
+```bash
+minecraft-gym world snapshot \
+  "$HOME/Library/Application Support/minecraft/saves/My Survival World" \
+  --output "$HOME/minecraft-gym-templates/survival-001"
+
+minecraft-gym world clone \
+  "$HOME/minecraft-gym-templates/survival-001"
+```
+
+Both operations reject unsafe overwrites. Snapshot requires a closed source
+world; clone requires that no Launcher world is currently open and prints the
+new save name and SHA-256 as JSON. Use `--saves-dir` for a nonstandard Launcher.
 
 #### Earlier PyPI release (version 0.2.0)
 
@@ -138,6 +170,9 @@ To select a mode without the final menu, use:
 
 ```bash
 minecraft-gym start record --output datasets/demonstrations --steps 9000
+minecraft-gym start record --output datasets/visual-16x9 --steps 9000 \
+  --width 320 --height 180 --frame-skip 4 \
+  --metadata collector=human-01 --metadata split=train
 minecraft-gym start agent path/to/agent.py
 ```
 
@@ -145,8 +180,13 @@ Run **one** of these commands per session, not both. The agent script must
 create and close its own Gymnasium environment; `start agent` does not supply
 a built-in policy. On Linux, `start` uses `minecraft-launcher` if it is on
 `PATH`; otherwise pass `--launcher`. If Minecraft is already open, add
-`--no-launch` after `start`. The Python package does **not** install Minecraft,
-Fabric Loader, Fabric API, or the bridge mod.
+`--no-launch` after `start`. The Python package does not install Minecraft
+itself; `minecraft-gym setup` installs Fabric Loader, Fabric API, and the
+bridge into an existing official Launcher directory.
+
+For agent and external human-recording loops, press `F3+P` until Minecraft
+shows `Pause on lost focus: disabled`. Otherwise the integrated server can
+pause while the Python process is active and `step()` will wait indefinitely.
 
 Recording uses `reset()` before its first step. This soft reset clears the
 player inventory, restores vitals, time, and weather, and moves the player to
@@ -224,10 +264,18 @@ cd fabric
 ./gradlew build
 ```
 
+Install that exact verified local build into the official Launcher instead of
+downloading a release artifact:
+
+```bash
+uv run minecraft-gym setup \
+  --bridge-jar fabric/build/libs/minecraft-gym-bridge-0.1.2.jar
+```
+
 The mod artifact is written to:
 
 ```text
-fabric/build/libs/minecraft-gym-bridge-0.1.0.jar
+fabric/build/libs/minecraft-gym-bridge-0.1.2.jar
 ```
 
 ## Running the real environment
@@ -443,10 +491,21 @@ The environment returns a `gymnasium.spaces.Dict`:
 The `info` dictionary includes:
 
 - current tick and actual world seed;
-- events such as damage, death, and inventory increases;
+- structured events: aggregate `inventory_delta`, `recipe_unlocked`,
+  `vital_delta`, `damage`, `death`, and `ui_changed`;
+- canonical item/recipe identifiers such as `minecraft:oak_log` in events,
+  while the numeric inventory arrays remain available for compatibility;
+- `privileged_context` for dataset labelling: day time, rain, light, sky
+  exposure, submersion, and nearby hostile summary;
 - individual reward terms;
 - `policy_action`, `human_action`, and `executed_action`;
 - `control_source`, indicating whether the agent or a human controlled the step.
+
+`privileged_context` and the structured state are instrumentation. A visual-only
+agent should filter them before policy inference. For learning from UI and HUD
+at the aspect ratio used by the game, the research collection profile uses
+`width=320`, `height=180`; the environment defaults remain small for backwards
+compatibility.
 
 ## Control modes
 

@@ -44,14 +44,19 @@ def test_setup_installs_loader_and_mods(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr(installer, "_java_21", lambda: Path("/jdk21/bin/java"))
     monkeypatch.setattr(installer, "_verified_download", download)
+    monkeypatch.setattr(installer, "_bundled_bridge_bytes", lambda: b"packaged bridge")
+    monkeypatch.setattr(
+        installer,
+        "BRIDGE_SHA256",
+        hashlib.sha256(b"packaged bridge").hexdigest(),
+    )
     monkeypatch.setattr(installer.subprocess, "run", run)
     installer.setup(game_dir)
     assert (game_dir / "mods" / installer.FABRIC_API_NAME).read_bytes() == b"verified jar"
-    assert (game_dir / "mods" / installer.BRIDGE_NAME).read_bytes() == b"verified jar"
+    assert (game_dir / "mods" / installer.BRIDGE_NAME).read_bytes() == b"packaged bridge"
     assert downloaded == [
         installer.FABRIC_INSTALLER_URL,
         installer.FABRIC_API_URL,
-        installer.BRIDGE_URL,
     ]
 
 
@@ -108,12 +113,42 @@ def test_setup_upgrades_previous_bridge_and_preserves_backup(monkeypatch, tmp_pa
     monkeypatch.setattr(
         installer,
         "_verified_download",
-        lambda url, checksum=None: b"api" if url == installer.FABRIC_API_URL else b"new bridge",
+        lambda url, checksum=None: b"api",
     )
+    monkeypatch.setattr(installer, "_bundled_bridge_bytes", lambda: b"new bridge")
     installer.setup(game_dir)
     assert not old_bridge.exists()
     assert (mods / installer.BRIDGE_NAME).read_bytes() == b"new bridge"
     assert (game_dir / ".minecraft-gym-backup" / old_bridge.name).read_bytes() == b"old bridge"
+
+
+def test_setup_installs_verified_local_bridge_build(monkeypatch, tmp_path) -> None:
+    game_dir = _launcher_dir(tmp_path / "minecraft")
+    _fabric_loader(game_dir)
+    local_bridge = tmp_path / installer.LOCAL_BRIDGE_NAME
+    local_bridge.write_bytes(b"local bridge")
+    monkeypatch.setattr(
+        installer, "LOCAL_BRIDGE_SHA256", hashlib.sha256(b"local bridge").hexdigest()
+    )
+    monkeypatch.setattr(
+        installer, "FABRIC_API_SHA256", hashlib.sha256(b"api").hexdigest()
+    )
+    monkeypatch.setattr(installer, "_verified_download", lambda *args: b"api")
+    installer.setup(game_dir, bridge_jar=local_bridge)
+    assert (game_dir / "mods" / installer.LOCAL_BRIDGE_NAME).read_bytes() == b"local bridge"
+
+
+def test_setup_rejects_unverified_local_bridge_build(monkeypatch, tmp_path) -> None:
+    game_dir = _launcher_dir(tmp_path / "minecraft")
+    _fabric_loader(game_dir)
+    local_bridge = tmp_path / installer.LOCAL_BRIDGE_NAME
+    local_bridge.write_bytes(b"wrong bridge")
+    monkeypatch.setattr(
+        installer, "FABRIC_API_SHA256", hashlib.sha256(b"api").hexdigest()
+    )
+    monkeypatch.setattr(installer, "_verified_download", lambda *args: b"api")
+    with pytest.raises(RuntimeError, match="Local bridge SHA-256 mismatch"):
+        installer.setup(game_dir, bridge_jar=local_bridge)
 
 
 def test_verified_download_rejects_bad_checksum(monkeypatch) -> None:

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "minecraft-gym"
-version = "0.3.1"
+version = "0.3.2"
 description = "A Gymnasium environment and bridge protocol for controlling Minecraft Java Edition."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -55,9 +55,16 @@ minecraft-gym = "minecraft_gym.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/minecraft_gym"]
+artifacts = ["src/minecraft_gym/assets/*.jar"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/minecraft_gym", "README.md", "LICENSE", "pyproject.toml"]
+include = [
+  "src/minecraft_gym",
+  "src/minecraft_gym/assets/*.jar",
+  "README.md",
+  "LICENSE",
+  "pyproject.toml",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -25,7 +25,9 @@ sequenciais para preservar a relação ação–tick–observação.
     "human_input",
     "dagger",
     "survival_soft_reset",
-    "frozen_tick_step"
+    "frozen_tick_step",
+    "semantic_events",
+    "privileged_context"
   ]
 }
 ```
@@ -101,12 +103,29 @@ o mod usa input humano quando houver intervenção e informa ambas as ações.
   },
   "terminated": false,
   "truncated": false,
-  "events": [],
+  "events": [
+    {
+      "type": "inventory_delta",
+      "item": "minecraft:oak_log",
+      "before": 0,
+      "after": 1,
+      "delta": 1
+    }
+  ],
   "info": {
     "control_source": "agent",
     "policy_action": {},
     "human_action": null,
-    "executed_action": {}
+    "executed_action": {},
+    "privileged_context": {
+      "day_time": 4000,
+      "raining": false,
+      "light_level": 15,
+      "can_see_sky": true,
+      "submerged": false,
+      "hostile_count": 0,
+      "nearest_hostile_distance": -1.0
+    }
   }
 }
 ```
@@ -114,6 +133,15 @@ o mod usa input humano quando houver intervenção e informa ambas as ações.
 `inventory_ids` e `inventory_counts` sempre possuem 36 elementos. Imagens são
 RGB, row-major, sem padding. `terminated` representa morte; desconexão, timeout
 ou limite operacional devem produzir `truncated`.
+
+Eventos suportados são `inventory_delta`, `recipe_unlocked`, `vital_delta`,
+`damage`, `death` e `ui_changed`. Durante a transição, o bridge também mantém
+os eventos legados `inventory_increased` e `health_lost`. Inventário é agregado
+por item, incluindo o stack carregado pelo cursor da GUI; reorganizar slots não
+produz progresso falso.
+
+`privileged_context` existe para rotulagem e avaliação. Ele não faz parte do
+espaço de observação e deve ser filtrado por políticas visuais.
 
 ## Close
 

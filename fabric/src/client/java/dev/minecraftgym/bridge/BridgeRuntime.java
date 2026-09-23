@@ -1,7 +1,10 @@
 package dev.minecraftgym.bridge;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -11,11 +14,18 @@ import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.recipebook.RecipeCollection;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity.RemovalReason;
 import net.minecraft.world.entity.RelativeMovement;
+import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.GameType;
 
 final class BridgeRuntime implements AutoCloseable {
@@ -32,8 +42,12 @@ final class BridgeRuntime implements AutoCloseable {
     private float priorHumanPitch;
     private double priorCursorX;
     private double priorCursorY;
-    private List<Integer> priorInventory = List.of();
+    private Map<String, Integer> priorInventory = Map.of();
+    private Set<ResourceLocation> priorRecipes = Set.of();
     private float priorHealth = 1;
+    private int priorHunger = 20;
+    private int priorAir = 300;
+    private int priorUiMode = 0;
     private ResetAnchor resetAnchor;
 
     CompletableFuture<JsonObject> submit(JsonObject request) {
@@ -132,10 +146,15 @@ final class BridgeRuntime implements AutoCloseable {
             priorHumanPitch = minecraft.player.getXRot();
             priorCursorX = minecraft.mouseHandler.xpos();
             priorCursorY = minecraft.mouseHandler.ypos();
-            priorInventory = inventoryCounts(minecraft);
+            priorInventory = inventoryTotals(minecraft);
+            priorRecipes = knownRecipes(minecraft);
             priorHealth = minecraft.player.getHealth();
+            priorHunger = minecraft.player.getFoodData().getFoodLevel();
+            priorAir = minecraft.player.getAirSupply();
+            priorUiMode = ObservationEncoder.uiMode(minecraft);
             JsonObject response = transitionResponse(minecraft, false, false, List.of());
             JsonObject info = response.getAsJsonObject("info");
+            info.add("privileged_context", privilegedContext(minecraft));
             info.addProperty("reset_mode", "soft_anchor");
             long requestedSeed = reset.pending().request().get("seed").getAsLong();
             info.addProperty("requested_seed", requestedSeed);
@@ -175,7 +194,8 @@ final class BridgeRuntime implements AutoCloseable {
                     || minecraft.player.getHealth() <= 0;
             List<JsonObject> events = detectEvents(minecraft, terminated);
             JsonObject response = transitionResponse(minecraft, terminated, false, events);
-            JsonObject info = response.getAsJsonObject("info");
+        JsonObject info = response.getAsJsonObject("info");
+        info.add("privileged_context", privilegedContext(minecraft));
             info.addProperty("control_source", step.controlSource);
             info.add("policy_action", step.policyAction.toJson());
             if (step.humanAction == null) {
@@ -210,24 +230,74 @@ final class BridgeRuntime implements AutoCloseable {
 
     private List<JsonObject> detectEvents(Minecraft minecraft, boolean died) {
         List<JsonObject> events = new ArrayList<>();
-        float currentHealth = minecraft.player == null ? 0 : minecraft.player.getHealth();
-        if (currentHealth < priorHealth) {
-            JsonObject event = new JsonObject();
-            event.addProperty("type", "health_lost");
-            event.addProperty("amount", priorHealth - currentHealth);
-            events.add(event);
-        }
-        List<Integer> currentInventory = inventoryCounts(minecraft);
-        int slots = Math.min(priorInventory.size(), currentInventory.size());
-        for (int slot = 0; slot < slots; slot++) {
-            int delta = currentInventory.get(slot) - priorInventory.get(slot);
-            if (delta > 0) {
+        if (minecraft.player == null || minecraft.level == null) {
+            if (died) {
                 JsonObject event = new JsonObject();
-                event.addProperty("type", "inventory_increased");
-                event.addProperty("slot", slot);
-                event.addProperty("count", delta);
+                event.addProperty("type", "death");
                 events.add(event);
             }
+            return events;
+        }
+        float currentHealth = minecraft.player.getHealth();
+        if (currentHealth < priorHealth) {
+            JsonObject event = new JsonObject();
+            event.addProperty("type", "damage");
+            event.addProperty("amount", priorHealth - currentHealth);
+            events.add(event);
+            JsonObject legacy = event.deepCopy();
+            legacy.addProperty("type", "health_lost");
+            events.add(legacy);
+        }
+        addVitalDelta(events, "health", priorHealth, currentHealth);
+        int currentHunger = minecraft.player.getFoodData().getFoodLevel();
+        int currentAir = minecraft.player.getAirSupply();
+        addVitalDelta(events, "hunger", priorHunger, currentHunger);
+        addVitalDelta(events, "air", priorAir, currentAir);
+
+        Map<String, Integer> currentInventory = inventoryTotals(minecraft);
+        Set<String> items = new HashSet<>(priorInventory.keySet());
+        items.addAll(currentInventory.keySet());
+        for (String item : items) {
+            int before = priorInventory.getOrDefault(item, 0);
+            int after = currentInventory.getOrDefault(item, 0);
+            int delta = after - before;
+            if (delta != 0) {
+                JsonObject event = new JsonObject();
+                event.addProperty("type", "inventory_delta");
+                event.addProperty("item", item);
+                event.addProperty("before", before);
+                event.addProperty("after", after);
+                event.addProperty("delta", delta);
+                events.add(event);
+                if (delta > 0) {
+                    JsonObject legacy = new JsonObject();
+                    legacy.addProperty("type", "inventory_increased");
+                    legacy.addProperty("item", item);
+                    legacy.addProperty("count", delta);
+                    events.add(legacy);
+                }
+            }
+        }
+
+        Set<ResourceLocation> currentRecipes = knownRecipes(minecraft);
+        for (ResourceLocation recipeId : currentRecipes) {
+            if (!priorRecipes.contains(recipeId)) {
+                JsonObject event = new JsonObject();
+                event.addProperty("type", "recipe_unlocked");
+                event.addProperty("recipe", recipeId.toString());
+                recipeResult(minecraft, recipeId).ifPresent(
+                        result -> event.addProperty("result_item", result));
+                events.add(event);
+            }
+        }
+
+        int currentUiMode = ObservationEncoder.uiMode(minecraft);
+        if (currentUiMode != priorUiMode) {
+            JsonObject event = new JsonObject();
+            event.addProperty("type", "ui_changed");
+            event.addProperty("before", priorUiMode);
+            event.addProperty("after", currentUiMode);
+            events.add(event);
         }
         if (died) {
             JsonObject event = new JsonObject();
@@ -235,16 +305,112 @@ final class BridgeRuntime implements AutoCloseable {
             events.add(event);
         }
         priorHealth = currentHealth;
+        priorHunger = currentHunger;
+        priorAir = currentAir;
+        priorUiMode = currentUiMode;
         priorInventory = currentInventory;
+        priorRecipes = currentRecipes;
         return events;
     }
 
-    private static List<Integer> inventoryCounts(Minecraft minecraft) {
-        List<Integer> counts = new ArrayList<>(36);
+    private static void addVitalDelta(
+            List<JsonObject> events, String vital, float before, float after) {
+        if (Float.compare(before, after) == 0) {
+            return;
+        }
+        JsonObject event = new JsonObject();
+        event.addProperty("type", "vital_delta");
+        event.addProperty("vital", vital);
+        event.addProperty("before", before);
+        event.addProperty("after", after);
+        event.addProperty("delta", after - before);
+        events.add(event);
+    }
+
+    private static Map<String, Integer> inventoryTotals(Minecraft minecraft) {
+        Map<String, Integer> counts = new HashMap<>();
         for (int slot = 0; slot < 36; slot++) {
-            counts.add(minecraft.player == null ? 0 : minecraft.player.getInventory().getItem(slot).getCount());
+            if (minecraft.player == null) {
+                break;
+            }
+            ItemStack stack = minecraft.player.getInventory().getItem(slot);
+            if (!stack.isEmpty()) {
+                String item = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+                counts.merge(item, stack.getCount(), Integer::sum);
+            }
+        }
+        // Include the stack held by the GUI cursor. Otherwise moving a stack
+        // out of a slot and back looks like consumption followed by acquisition.
+        if (minecraft.player != null && minecraft.player.containerMenu != null) {
+            ItemStack carried = minecraft.player.containerMenu.getCarried();
+            if (!carried.isEmpty()) {
+                String item = BuiltInRegistries.ITEM.getKey(carried.getItem()).toString();
+                counts.merge(item, carried.getCount(), Integer::sum);
+            }
         }
         return counts;
+    }
+
+    private static Set<ResourceLocation> knownRecipes(Minecraft minecraft) {
+        Set<ResourceLocation> known = new HashSet<>();
+        if (minecraft.player == null) {
+            return known;
+        }
+        for (RecipeCollection collection : minecraft.player.getRecipeBook().getCollections()) {
+            for (RecipeHolder<?> recipe : collection.getRecipes()) {
+                if (minecraft.player.getRecipeBook().contains(recipe)) {
+                    known.add(recipe.id());
+                }
+            }
+        }
+        return known;
+    }
+
+    private static java.util.Optional<String> recipeResult(
+            Minecraft minecraft, ResourceLocation recipeId) {
+        if (minecraft.player == null || minecraft.level == null) {
+            return java.util.Optional.empty();
+        }
+        for (RecipeCollection collection : minecraft.player.getRecipeBook().getCollections()) {
+            for (RecipeHolder<?> recipe : collection.getRecipes()) {
+                if (recipe.id().equals(recipeId)) {
+                    ItemStack result = recipe.value().getResultItem(minecraft.level.registryAccess());
+                    if (!result.isEmpty()) {
+                        return java.util.Optional.of(
+                                BuiltInRegistries.ITEM.getKey(result.getItem()).toString());
+                    }
+                }
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
+    private static JsonObject privilegedContext(Minecraft minecraft) {
+        JsonObject context = new JsonObject();
+        if (minecraft.player == null || minecraft.level == null) {
+            return context;
+        }
+        BlockPos position = minecraft.player.blockPosition();
+        context.addProperty("day_time", Math.floorMod(minecraft.level.getDayTime(), 24000));
+        context.addProperty("raining", minecraft.level.isRainingAt(position));
+        context.addProperty(
+                "light_level", minecraft.level.getLightEngine().getRawBrightness(position, 0));
+        context.addProperty(
+                "can_see_sky", minecraft.level.canSeeSkyFromBelowWater(position));
+        context.addProperty("submerged", minecraft.player.isUnderWater());
+        List<net.minecraft.world.entity.Entity> hostiles = minecraft.level.getEntities(
+                minecraft.player,
+                minecraft.player.getBoundingBox().inflate(16.0),
+                entity -> entity instanceof Enemy && entity.isAlive());
+        context.addProperty("hostile_count", hostiles.size());
+        double nearest = hostiles.stream()
+                .mapToDouble(minecraft.player::distanceToSqr)
+                .min()
+                .orElse(Double.POSITIVE_INFINITY);
+        context.addProperty(
+                "nearest_hostile_distance",
+                Double.isFinite(nearest) ? Math.sqrt(nearest) : -1.0);
+        return context;
     }
 
     private void resetPlayerAndWorld(MinecraftServer server, java.util.UUID playerId) {

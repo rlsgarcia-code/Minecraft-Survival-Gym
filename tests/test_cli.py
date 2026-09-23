@@ -79,7 +79,15 @@ def test_record_mode_writes_episode_with_mock_backend(monkeypatch, tmp_path) -> 
         ),
     )
     args = argparse.Namespace(
-        steps=2, seed=42, host="127.0.0.1", port=25570, output=tmp_path
+        steps=2,
+        seed=42,
+        host="127.0.0.1",
+        port=25570,
+        output=tmp_path,
+        width=8,
+        height=6,
+        frame_skip=4,
+        metadata=[],
     )
     cli._record(args)
     assert len(list(tmp_path.glob("episode-*.npz"))) == 1
@@ -106,3 +114,42 @@ def test_macos_launcher_uses_minecraft_app(monkeypatch) -> None:
 def test_bridge_timeout_is_positive() -> None:
     with pytest.raises(ValueError, match="positive"):
         cli._wait_for_bridge("127.0.0.1", 25570, 0)
+
+
+def test_doctor_is_non_mutating(monkeypatch, tmp_path, capsys) -> None:
+    game_dir = tmp_path / "minecraft"
+    game_dir.mkdir()
+    monkeypatch.setattr(cli, "_bridge_responds", lambda host, port: False)
+    assert cli.main(["doctor", "--game-dir", str(game_dir)]) == 0
+    report = __import__("json").loads(capsys.readouterr().out)
+    assert report["game_dir"] == str(game_dir)
+    assert report["bridge_listening"] is False
+    assert not (game_dir / "mods").exists()
+
+
+def test_world_cli_snapshots_and_clones(tmp_path, capsys) -> None:
+    source = tmp_path / "saves" / "Survival"
+    source.mkdir(parents=True)
+    (source / "level.dat").write_bytes(b"level")
+    template = tmp_path / "template"
+    target = tmp_path / "target-saves"
+    target.mkdir()
+
+    assert cli.main(
+        ["world", "snapshot", str(source), "--output", str(template)]
+    ) == 0
+    capsys.readouterr()
+    assert cli.main(
+        [
+            "world",
+            "clone",
+            str(template),
+            "--saves-dir",
+            str(target),
+            "--name",
+            "smoke-001",
+        ]
+    ) == 0
+    report = __import__("json").loads(capsys.readouterr().out)
+    assert report["name"] == "smoke-001"
+    assert (target / "smoke-001" / "level.dat").is_file()

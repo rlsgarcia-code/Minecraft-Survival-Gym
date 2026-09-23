@@ -99,7 +99,7 @@ final class ObservationEncoder {
         return values;
     }
 
-    private static int uiMode(Minecraft minecraft) {
+    static int uiMode(Minecraft minecraft) {
         if (minecraft.screen == null) {
             return 0;
         }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from importlib import resources
 import os
 import platform
 import re
@@ -16,7 +17,7 @@ from pathlib import Path
 MINECRAFT_VERSION = "1.21"
 FABRIC_API_VERSION = "0.102.0+1.21"
 FABRIC_INSTALLER_VERSION = "1.1.2"
-BRIDGE_VERSION = "0.1.1"
+BRIDGE_VERSION = "0.1.2"
 FABRIC_MAVEN = "https://maven.fabricmc.net"
 FABRIC_API_NAME = f"fabric-api-{FABRIC_API_VERSION}.jar"
 BRIDGE_NAME = f"minecraft-gym-bridge-{BRIDGE_VERSION}.jar"
@@ -28,11 +29,9 @@ FABRIC_INSTALLER_URL = (
     f"{FABRIC_MAVEN}/net/fabricmc/fabric-installer/"
     f"{FABRIC_INSTALLER_VERSION}/fabric-installer-{FABRIC_INSTALLER_VERSION}.jar"
 )
-BRIDGE_URL = (
-    "https://github.com/rlsgarcia-code/Minecraft-Survival-Gym/releases/"
-    f"download/v{BRIDGE_VERSION}/{BRIDGE_NAME}"
-)
-BRIDGE_SHA256 = "71ff55d9b8500e5103a9d5aec22d7e21b32725e869432d290d80abf301e590cc"
+BRIDGE_SHA256 = "a898383f618ec9743a7a57a06825d2bdcaf1cd5319ad53a61d7ba61f5cca4ce3"
+LOCAL_BRIDGE_NAME = BRIDGE_NAME
+LOCAL_BRIDGE_SHA256 = "a898383f618ec9743a7a57a06825d2bdcaf1cd5319ad53a61d7ba61f5cca4ce3"
 FABRIC_API_SHA256 = "7ec0e5a11e77957fe1ed0328487921a8211bb7eace14298cd74635bec61a3f26"
 FABRIC_INSTALLER_SHA256 = "61e035bf7bf70153e127440ce34de47c9036f0a2d0c65d1529454bd35ceefe4f"
 MAX_DOWNLOAD_BYTES = 32 * 1024 * 1024
@@ -69,6 +68,8 @@ def _java_21() -> Path:
             candidates.append(
                 Path(prefix) / "opt/openjdk@21/libexec/openjdk.jdk/Contents/Home/bin/java"
             )
+        runtime = default_game_dir() / "runtime"
+        candidates.extend(sorted(runtime.glob("**/jre.bundle/Contents/Home/bin/java")))
     on_path = shutil.which("java")
     if on_path:
         candidates.append(Path(on_path))
@@ -165,7 +166,99 @@ def _install_mod(
     print(f"Installed: {target}", flush=True)
 
 
-def setup(game_dir: Path, *, dry_run: bool = False) -> None:
+def _install_local_bridge(
+    mods_dir: Path,
+    bridge_jar: Path,
+    *,
+    obsolete: list[Path],
+    backup_dir: Path,
+) -> None:
+    source = bridge_jar.expanduser().resolve()
+    if not source.is_file() or source.name != LOCAL_BRIDGE_NAME:
+        raise RuntimeError(
+            f"--bridge-jar must point to a built {LOCAL_BRIDGE_NAME}: {source}"
+        )
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    if digest != LOCAL_BRIDGE_SHA256:
+        raise RuntimeError(
+            "Local bridge SHA-256 mismatch: expected "
+            f"{LOCAL_BRIDGE_SHA256}, got {digest}"
+        )
+    target = mods_dir / LOCAL_BRIDGE_NAME
+    if target.exists():
+        if hashlib.sha256(target.read_bytes()).hexdigest() != LOCAL_BRIDGE_SHA256:
+            raise RuntimeError(f"Existing file does not match the expected build: {target}")
+        _backup_obsolete(obsolete, backup_dir)
+        print(f"Already present: {target}", flush=True)
+        return
+    mods_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=mods_dir, prefix=".minecraft-gym-", delete=False
+    ) as temp:
+        temp.write(source.read_bytes())
+        staged = Path(temp.name)
+    try:
+        _backup_obsolete(obsolete, backup_dir)
+        if target.exists():
+            raise RuntimeError(f"File appeared during setup; refusing to overwrite: {target}")
+        staged.replace(target)
+    finally:
+        staged.unlink(missing_ok=True)
+    print(f"Installed local build: {target}", flush=True)
+
+
+def _bundled_bridge_bytes() -> bytes:
+    bridge = resources.files("minecraft_gym").joinpath("assets", BRIDGE_NAME)
+    try:
+        data = bridge.read_bytes()
+    except (FileNotFoundError, OSError) as error:
+        raise RuntimeError(
+            f"Installed package does not contain its bridge asset: {BRIDGE_NAME}"
+        ) from error
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != BRIDGE_SHA256:
+        raise RuntimeError(
+            f"Bundled bridge SHA-256 mismatch: expected {BRIDGE_SHA256}, got {digest}"
+        )
+    return data
+
+
+def _install_bundled_bridge(
+    mods_dir: Path,
+    *,
+    obsolete: list[Path],
+    backup_dir: Path,
+) -> None:
+    target = mods_dir / BRIDGE_NAME
+    if target.exists():
+        if hashlib.sha256(target.read_bytes()).hexdigest() != BRIDGE_SHA256:
+            raise RuntimeError(f"Existing file does not match the packaged bridge: {target}")
+        _backup_obsolete(obsolete, backup_dir)
+        print(f"Already present: {target}", flush=True)
+        return
+    data = _bundled_bridge_bytes()
+    mods_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=mods_dir, prefix=".minecraft-gym-", delete=False
+    ) as temp:
+        temp.write(data)
+        staged = Path(temp.name)
+    try:
+        _backup_obsolete(obsolete, backup_dir)
+        if target.exists():
+            raise RuntimeError(f"File appeared during setup; refusing to overwrite: {target}")
+        staged.replace(target)
+    finally:
+        staged.unlink(missing_ok=True)
+    print(f"Installed packaged bridge: {target}", flush=True)
+
+
+def setup(
+    game_dir: Path,
+    *,
+    dry_run: bool = False,
+    bridge_jar: Path | None = None,
+) -> None:
     game_dir = game_dir.expanduser().resolve()
     if not game_dir.is_dir() or not (game_dir / "launcher_profiles.json").is_file():
         raise RuntimeError(
@@ -173,10 +266,14 @@ def setup(game_dir: Path, *, dry_run: bool = False) -> None:
             "Install and open the official Launcher once, or pass --game-dir."
         )
     mods_dir = game_dir / "mods"
-    upgradeable_bridge = {f"minecraft-gym-bridge-0.1.0.jar"}
+    desired_bridge_name = LOCAL_BRIDGE_NAME if bridge_jar is not None else BRIDGE_NAME
+    upgradeable_bridge = {
+        "minecraft-gym-bridge-0.1.0.jar",
+        "minecraft-gym-bridge-0.1.1.jar",
+    }
     obsolete_bridge: list[Path] = []
     for pattern, target in (("fabric-api-*.jar", FABRIC_API_NAME),
-                            ("minecraft-gym-bridge-*.jar", BRIDGE_NAME)):
+                            ("minecraft-gym-bridge-*.jar", desired_bridge_name)):
         conflicts = [p.name for p in mods_dir.glob(pattern) if p.name != target]
         if pattern.startswith("minecraft-gym-bridge"):
             obsolete_bridge = [mods_dir / name for name in conflicts if name in upgradeable_bridge]
@@ -190,6 +287,8 @@ def setup(game_dir: Path, *, dry_run: bool = False) -> None:
     print(f"Minecraft directory: {game_dir}", flush=True)
     print(f"Fabric Loader for {MINECRAFT_VERSION}: {'found' if has_loader else 'will install'}", flush=True)
     print(f"Mods directory: {mods_dir}", flush=True)
+    if bridge_jar is not None:
+        print(f"Bridge source: {bridge_jar.expanduser().resolve()}", flush=True)
     if dry_run:
         print("Dry run: no files downloaded or changed.", flush=True)
         return
@@ -208,14 +307,19 @@ def setup(game_dir: Path, *, dry_run: bool = False) -> None:
         if result.returncode != 0 or not _has_fabric_loader(game_dir):
             raise RuntimeError("Fabric Installer failed; no mods were installed.")
     _install_mod(mods_dir, FABRIC_API_NAME, FABRIC_API_URL, FABRIC_API_SHA256)
-    _install_mod(
-        mods_dir,
-        BRIDGE_NAME,
-        BRIDGE_URL,
-        BRIDGE_SHA256,
-        obsolete=obsolete_bridge,
-        backup_dir=game_dir / ".minecraft-gym-backup",
-    )
+    if bridge_jar is None:
+        _install_bundled_bridge(
+            mods_dir,
+            obsolete=obsolete_bridge,
+            backup_dir=game_dir / ".minecraft-gym-backup",
+        )
+    else:
+        _install_local_bridge(
+            mods_dir,
+            bridge_jar,
+            obsolete=obsolete_bridge,
+            backup_dir=game_dir / ".minecraft-gym-backup",
+        )
     print(
         "Setup complete. Run `minecraft-gym start`, select the Minecraft 1.21 "
         "Fabric profile, click Play, and enter a single-player Survival world.",
