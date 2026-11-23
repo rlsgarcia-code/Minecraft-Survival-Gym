@@ -14,3 +14,9 @@ build/
 datasets/
 run/
 fabric/.gradle/
+fabric-server-26.3/.gradle/
+training-worlds/runtime/
+artifacts/
+checkpoints/
+runs/
+training-worlds/

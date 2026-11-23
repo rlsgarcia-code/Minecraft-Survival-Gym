@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "minecraft_gym_server_collector",
+  "version": "${version}",
+  "name": "Minecraft Gym Server Collector",
+  "description": "Passive authoritative state collector for Minecraft Gym datasets.",
+  "authors": ["Minecraft Gym"],
+  "license": "MIT",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      "dev.minecraftgym.server.MinecraftGymServerCollector"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}

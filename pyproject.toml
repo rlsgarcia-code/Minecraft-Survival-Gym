@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "minecraft-gym"
-version = "0.3.2"
+version = "0.4.0"
 description = "A Gymnasium environment and bridge protocol for controlling Minecraft Java Edition."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,11 +32,21 @@ classifiers = [
 dependencies = [
   "gymnasium>=1.1,<2",
   "numpy>=1.26,<3",
+  "pillow>=11,<13",
+  "pydantic>=2.10,<3",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8,<9",
+]
+research = [
+  "lmdb>=1.7,<2",
+  "minari[create]>=0.5.3,<1",
+  "pyarrow>=18,<24",
+]
+learning = [
+  "torch>=2.5,<3",
 ]
 notebook = [
   "ipykernel>=6,<8",
@@ -53,14 +63,17 @@ Issues = "https://github.com/rlsgarcia-code/Minecraft-Survival-Gym/issues"
 [project.scripts]
 minecraft-gym = "minecraft_gym.cli:main"
 
+[tool.hatch.build]
+exclude = ["src/minecraft_gym/assets/minecraft-gym-bridge-0.1.2.jar"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/minecraft_gym"]
-artifacts = ["src/minecraft_gym/assets/*.jar"]
+artifacts = ["src/minecraft_gym/assets/minecraft-gym-bridge-0.2.0.jar"]
 
 [tool.hatch.build.targets.sdist]
 include = [
   "src/minecraft_gym",
-  "src/minecraft_gym/assets/*.jar",
+  "src/minecraft_gym/assets/minecraft-gym-bridge-0.2.0.jar",
   "README.md",
   "LICENSE",
   "pyproject.toml",

@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+WRAPPER_JAR="$SCRIPT_DIR/../fabric/gradle/wrapper/gradle-wrapper.jar"
+
+if [ -n "${MINECRAFT_GYM_JAVA_25:-}" ]; then
+    JAVA_BIN=$MINECRAFT_GYM_JAVA_25
+elif [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+    JAVA_BIN="$JAVA_HOME/bin/java"
+else
+    JAVA_BIN=$(command -v java || true)
+fi
+
+if [ -z "$JAVA_BIN" ] || [ ! -x "$JAVA_BIN" ]; then
+    echo "Java 25 executable not found." >&2
+    echo "Set MINECRAFT_GYM_JAVA_25 to a Java 25 executable." >&2
+    exit 1
+fi
+
+if [ ! -f "$WRAPPER_JAR" ]; then
+    echo "Shared Gradle wrapper not found at: $WRAPPER_JAR" >&2
+    exit 1
+fi
+
+exec "$JAVA_BIN" -classpath "$WRAPPER_JAR" \
+    org.gradle.wrapper.GradleWrapperMain -p "$SCRIPT_DIR" "$@"

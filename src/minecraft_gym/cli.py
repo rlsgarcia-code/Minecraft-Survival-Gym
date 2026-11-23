@@ -17,8 +17,24 @@ from typing import Sequence
 import gymnasium as gym
 
 import minecraft_gym
+from minecraft_gym.academy.world_bundle import (
+    DEFAULT_DATA_PACK_FORMAT,
+    create_academy_bundle,
+    install_academy_bundle,
+)
+from minecraft_gym.academy.training import (
+    STRATEGY_LABELS,
+    compare_strategies,
+    evaluate_checkpoint,
+    train_curriculum,
+)
 from minecraft_gym.actions import noop_action
 from minecraft_gym.recording import TrajectoryRecorder
+from minecraft_gym.rgbd import (
+    build_collection_plan,
+    estimate_storage,
+    write_collection_plan,
+)
 from minecraft_gym.setup import (
     BRIDGE_NAME,
     FABRIC_API_NAME,
@@ -83,6 +99,89 @@ def _parser() -> argparse.ArgumentParser:
         help="Minecraft saves directory (defaults to the official Launcher)",
     )
     clone.add_argument("--name", help="Optional exact name for the cloned save")
+
+    academy = commands.add_parser(
+        "academy", help="Create or install the isolated locomotion training world"
+    )
+    academy_commands = academy.add_subparsers(dest="academy_command", required=True)
+    academy_create = academy_commands.add_parser(
+        "create", help="Generate the five-stage navigation academy datapack"
+    )
+    academy_create.add_argument("--output", type=Path, required=True)
+    academy_create.add_argument("--seed", type=int, default=0)
+    academy_create.add_argument(
+        "--pack-format", type=int, default=DEFAULT_DATA_PACK_FORMAT
+    )
+    academy_install = academy_commands.add_parser(
+        "install", help="Install a bundle into an isolated existing Minecraft save"
+    )
+    academy_install.add_argument("bundle", type=Path)
+    academy_install.add_argument("--world", type=Path, required=True)
+    academy_install.add_argument(
+        "--live-world",
+        type=Path,
+        required=True,
+        help="Family world path used only to prove the training save is isolated",
+    )
+    academy_train = academy_commands.add_parser(
+        "train", help="Train the structured Q-learning curriculum baseline"
+    )
+    academy_train.add_argument("--output", type=Path, required=True)
+    academy_train.add_argument("--episodes-per-stage", type=int, default=1000)
+    academy_train.add_argument("--seed", type=int, default=0)
+    academy_train.add_argument("--progress-file", type=Path)
+    academy_train.add_argument("--evaluation-episodes", type=int, default=20)
+    academy_compare = academy_commands.add_parser(
+        "compare", help="Train and compare one or more academy strategies"
+    )
+    academy_compare.add_argument("--output-dir", type=Path, required=True)
+    academy_compare.add_argument(
+        "--strategies",
+        nargs="+",
+        choices=sorted(STRATEGY_LABELS),
+        default=list(STRATEGY_LABELS),
+    )
+    academy_compare.add_argument("--episodes-per-stage", type=int, default=500)
+    academy_compare.add_argument("--evaluation-episodes", type=int, default=20)
+    academy_compare.add_argument("--seed", type=int, default=0)
+    academy_compare.add_argument("--epsilon-start", type=float, default=0.4)
+    academy_compare.add_argument("--epsilon-end", type=float, default=0.05)
+    academy_compare.add_argument("--resume-policy-artifact", type=Path)
+    academy_compare.add_argument("--stop-when-stable", action="store_true")
+    academy_compare.add_argument(
+        "--benchmark",
+        choices=("target_navigation", "legacy_curriculum"),
+        default="target_navigation",
+        help="Open random-biome target navigation (default) or legacy diagnostics",
+    )
+    academy_compare.add_argument("--progress-file", type=Path)
+    academy_evaluate = academy_commands.add_parser(
+        "evaluate", help="Evaluate a structured academy checkpoint"
+    )
+    academy_evaluate.add_argument("checkpoint", type=Path)
+    academy_evaluate.add_argument("--episodes-per-stage", type=int, default=20)
+    academy_evaluate.add_argument("--seed", type=int, default=10_000)
+
+    rgbd = commands.add_parser(
+        "rgbd", help="Plan and size the standalone RGB-to-depth dataset"
+    )
+    rgbd_commands = rgbd.add_subparsers(dest="rgbd_command", required=True)
+    rgbd_estimate = rgbd_commands.add_parser(
+        "estimate", help="Estimate encoded and safe working storage"
+    )
+    rgbd_estimate.add_argument("--pairs", type=int, default=100_000)
+    rgbd_estimate.add_argument("--width", type=int, default=640)
+    rgbd_estimate.add_argument("--height", type=int, default=360)
+    rgbd_estimate.add_argument("--working-overhead-ratio", type=float, default=0.25)
+    rgbd_plan = rgbd_commands.add_parser(
+        "plan", help="Write an auditable collection plan without collecting data"
+    )
+    rgbd_plan.add_argument("--output", type=Path, required=True)
+    rgbd_plan.add_argument("--dataset-id", default="minecraft-rgb-depth-v1")
+    rgbd_plan.add_argument("--pairs", type=int, default=100_000)
+    rgbd_plan.add_argument("--width", type=int, default=640)
+    rgbd_plan.add_argument("--height", type=int, default=360)
+    rgbd_plan.add_argument("--worlds", type=int, default=80)
 
     start = commands.add_parser(
         "start", help="Open Minecraft and start recording or an agent"
@@ -252,6 +351,83 @@ def _world(args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
+def _academy(args: argparse.Namespace) -> None:
+    if args.academy_command == "create":
+        result = create_academy_bundle(
+            args.output,
+            seed=args.seed,
+            pack_format=args.pack_format,
+        )
+    elif args.academy_command == "install":
+        result = install_academy_bundle(
+            args.bundle,
+            args.world,
+            live_world=args.live_world,
+        )
+    elif args.academy_command == "train":
+        result = train_curriculum(
+            args.output,
+            episodes_per_stage=args.episodes_per_stage,
+            seed=args.seed,
+            progress_path=args.progress_file,
+            evaluation_episodes=args.evaluation_episodes,
+        )
+    elif args.academy_command == "compare":
+        result = compare_strategies(
+            args.output_dir,
+            strategies=args.strategies,
+            episodes_per_stage=args.episodes_per_stage,
+            evaluation_episodes=args.evaluation_episodes,
+            seed=args.seed,
+            progress_path=args.progress_file,
+            epsilon_start=args.epsilon_start,
+            epsilon_end=args.epsilon_end,
+            resume_policy_artifact=args.resume_policy_artifact,
+            stop_when_stable=args.stop_when_stable,
+            benchmark=args.benchmark,
+        )
+    else:
+        result = evaluate_checkpoint(
+            args.checkpoint,
+            episodes_per_stage=args.episodes_per_stage,
+            seed=args.seed,
+        )
+    print(json.dumps(result, indent=2, sort_keys=True))
+
+
+def _rgbd(args: argparse.Namespace) -> None:
+    if args.rgbd_command == "estimate":
+        result = estimate_storage(
+            pairs=args.pairs,
+            width=args.width,
+            height=args.height,
+            working_overhead_ratio=args.working_overhead_ratio,
+        )
+        print(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))
+        return
+    plan = build_collection_plan(
+        dataset_id=args.dataset_id,
+        pairs=args.pairs,
+        width=args.width,
+        height=args.height,
+        worlds=args.worlds,
+    )
+    output = write_collection_plan(plan, args.output)
+    print(
+        json.dumps(
+            {
+                "capture_ready": plan.capture_ready,
+                "interface": plan.interface,
+                "output": str(output),
+                "storage": plan.storage.model_dump(mode="json"),
+                "target_pairs": plan.target_pairs,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
 def _record(args: argparse.Namespace) -> None:
     if args.steps <= 0:
         raise ValueError("--steps must be positive")
@@ -347,6 +523,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command == "world":
             _world(args)
+            return 0
+        if args.command == "academy":
+            _academy(args)
+            return 0
+        if args.command == "rgbd":
+            _rgbd(args)
             return 0
         if not args.no_launch:
             _launch_minecraft(args.launcher)

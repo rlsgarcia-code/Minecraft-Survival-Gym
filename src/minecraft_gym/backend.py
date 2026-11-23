@@ -86,6 +86,7 @@ class MockMinecraftBackend(MinecraftBackend):
         self._rng = np.random.default_rng()
         self._observation: BackendObservation | None = None
         self._closed = False
+        self._macro_control: ControlState | None = None
 
     def reset(
         self, *, seed: int, options: dict[str, Any], width: int, height: int
@@ -145,17 +146,34 @@ class MockMinecraftBackend(MinecraftBackend):
         info: dict[str, Any] = {
             "backend": "mock",
             "control_mode": control_mode,
-            "control_source": "agent",
+            "control_source": "human" if control_mode == "human" else "agent",
             "policy_action": control.to_dict(),
-            "human_action": None,
+            "human_action": control.to_dict() if control_mode == "human" else None,
             "executed_action": control.to_dict(),
         }
         return BackendTransition(observation=self._observation, info=info)
+
+    def start_macro(self, control: ControlState) -> dict[str, Any]:
+        if self._closed or self._observation is None:
+            raise RuntimeError("Backend must be reset before macro control")
+        self._macro_control = control
+        return {"ok": True, "control_source": "agent_macro", "action": control.to_dict()}
+
+    def stop_macro(self) -> BackendTransition:
+        if self._macro_control is None:
+            raise RuntimeError("No mock macro-action is active")
+        control = self._macro_control
+        self._macro_control = None
+        transition = self.step(control, frame_skip=4, control_mode="agent")
+        transition.info["control_source"] = "agent_macro"
+        transition.info["capture_mode"] = "macro_action"
+        return transition
 
     def render(self) -> np.ndarray | None:
         return None if self._observation is None else self._observation.rgb.copy()
 
     def close(self) -> None:
+        self._macro_control = None
         self._closed = True
 
     def _make_frame(self, width: int, height: int, *, tick: int) -> np.ndarray:
