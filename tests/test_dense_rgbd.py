@@ -7,10 +7,10 @@ import struct
 import zlib
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from minecraft_gym.academy import encode_dense_rgbd_policy_input
-from minecraft_gym.academy.visual_actor_critic import VisualHybridActorCriticAgent
 from minecraft_gym.dataset import HttpDenseRgbdStreamClient, ObservationRefV2
 
 
@@ -131,6 +131,9 @@ def test_dense_frame_becomes_five_aligned_policy_planes(monkeypatch) -> None:
 
 
 def test_visual_actor_critic_consumes_live_dense_frame(monkeypatch) -> None:
+    pytest.importorskip("torch")
+    from minecraft_gym.academy.visual_actor_critic import VisualHybridActorCriticAgent
+
     monkeypatch.setattr(
         "minecraft_gym.dataset.visual_stream.urllib.request.urlopen",
         lambda *args, **kwargs: _Response(_envelope()),

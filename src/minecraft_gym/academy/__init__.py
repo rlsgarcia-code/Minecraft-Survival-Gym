@@ -51,7 +51,23 @@ from .visual import (
     encode_visual_policy_input,
     resample_depth_planes,
 )
-from .visual_ppo import VisualHybridPpoAgent
+
+
+def __getattr__(name: str):
+    """Load optional PyTorch policies only when callers request them."""
+
+    if name == "VisualHybridPpoAgent":
+        try:
+            from .visual_ppo import VisualHybridPpoAgent
+        except ModuleNotFoundError as exc:
+            if exc.name != "torch":
+                raise
+            raise ImportError(
+                "VisualHybridPpoAgent requires the 'learning' extra: "
+                "pip install 'minecraft-gym[learning]'"
+            ) from exc
+        return VisualHybridPpoAgent
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "AcademyStage",

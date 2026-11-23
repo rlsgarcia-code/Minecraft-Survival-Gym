@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def _utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 class RGBDContractModel(BaseModel):

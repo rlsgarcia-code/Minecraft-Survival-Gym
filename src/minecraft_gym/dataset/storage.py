@@ -16,7 +16,7 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -40,7 +40,7 @@ LAYOUT_DIRECTORIES = (
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def _sha256(path: Path) -> str:

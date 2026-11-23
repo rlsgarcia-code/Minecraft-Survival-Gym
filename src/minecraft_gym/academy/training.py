@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -130,7 +130,7 @@ def _write_progress(path: str | Path | None, payload: dict[str, Any]) -> None:
     document = {
         "interface": "minecraft-academy-training-progress/v1",
         **payload,
-        "updated_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     temporary = target.with_suffix(target.suffix + ".partial")
     temporary.write_text(json.dumps(document, sort_keys=True), encoding="utf-8")

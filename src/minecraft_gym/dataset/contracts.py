@@ -7,7 +7,7 @@ stored alongside an episode.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 import math
 from typing import Any, Literal
 
@@ -33,7 +33,7 @@ Consumer = Literal[
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 _PRIVACY_PROTECTED_KEYS = {
