@@ -1,31 +1,115 @@
 # Minecraft Survival Gym
 
+<p align="center">
+  <img src="docs/images/minecraft-gym-hero.png" alt="Voxel-world embodied agent using RGB-D perception, navigation memory, and reinforcement learning" width="100%">
+</p>
+
+<p align="center"><em>Train embodied agents, record human demonstrations, and turn Minecraft trajectories into reproducible research datasets.</em></p>
+
 [![PyPI](https://img.shields.io/pypi/v/minecraft-gym.svg)](https://pypi.org/project/minecraft-gym/)
 [![CI](https://github.com/rlsgarcia-code/Minecraft-Survival-Gym/actions/workflows/ci.yml/badge.svg)](https://github.com/rlsgarcia-code/Minecraft-Survival-Gym/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/pypi/pyversions/minecraft-gym.svg)](https://pypi.org/project/minecraft-gym/)
 [![License](https://img.shields.io/github/license/rlsgarcia-code/Minecraft-Survival-Gym)](LICENSE)
 
-> A Gymnasium environment for training reinforcement learning agents to survive in Minecraft Java, with visual observations, full player controls, and keyboard/mouse demonstration recording.
+Minecraft Survival Gym is a Gymnasium-compatible research stack for embodied
+agents in Minecraft Java. It combines synchronized actions and observations,
+human demonstrations, RGB/RGB-D perception, spatial memory, isolated training
+worlds, versioned datasets, and policy evaluation behind one Python API.
 
-Minecraft Survival Gym connects Python policies to Minecraft Java 1.21 through a Fabric client mod and exposes the game as `minecraft_gym/MinecraftSurvival-v0`. It is designed as an experimental foundation for reinforcement learning, imitation learning, DAgger, and future VLM/LLM-driven objectives and rewards.
+**Start here:** [Install](#installation) · [Run an environment](#basic-usage) ·
+[Record demonstrations](#recording-demonstrations) ·
+[Navigation Academy](docs/navigation-academy.md) ·
+[Dataset v2](docs/dataset-v2.md) · [Protocol](docs/protocol.md)
 
 > [!IMPORTANT]
 > This is an independent experimental project. It is not an official Minecraft product and is not affiliated with Mojang or Microsoft.
 
-## Features
+The artwork above is an illustrative project cover. The application and
+spatial-representation images below are captures from the running system and
+project audits.
+
+## What is included
+
+| Layer | Role |
+|---|---|
+| `minecraft_gym/MinecraftSurvival-v0` | Real Minecraft environment with Gymnasium `reset`, `step`, `render`, and `close` semantics |
+| Fabric bridge | Tick-aligned controls, RGB observations, pose, vitals, inventory, and events |
+| Fabric 26.3 server collector | Passive authoritative state and event collection for shared dedicated worlds |
+| Dataset v2 | WAL-backed episode recording, manifests, hashes, privacy gates, quarantine, Parquet, Minari, and MineStudio export |
+| Navigation Academy | Isolated arenas, curricula, classical baselines, Actor-Critic, and visual PPO |
+| Perception and memory | Dense RGB-D, pixel-to-block raycasts, accumulated maps, voxels, and PanorAi odometry adapter |
+| BrincaBot Observer | Companion web console for live observation, demonstrations, spatial memory, and policy monitoring |
+
+## BrincaBot Observer
+
+<p align="center">
+  <img src="docs/images/brincabot-observer-live.png" alt="BrincaBot Observer showing the agent camera, activity timeline, planner, and spatial map" width="100%">
+</p>
+
+The BrincaBot Observer is the human-facing companion used in the local
+research setup. It shows the agent's egocentric stream, world dialogue,
+private consciousness channel, planner state, demonstrations, and training
+status while the Gym remains the canonical source of observations, actions,
+episode semantics, and dataset contracts.
+
+### macOS application, web runtime
+
+The current desktop experience is packaged as a macOS application so one icon
+can start the local Minecraft server, bot runtime, and Observer. The interface
+itself is a web application served by the local orchestration process. That
+separation is intentional:
+
+- macOS provides the polished one-click host used by the project today;
+- the same UI can be opened in a browser on the host or another authorized
+  machine;
+- the web/runtime architecture is portable to Linux and Windows where the
+  required Minecraft, Python, Java, and browser dependencies are available;
+- signed installers for platforms other than macOS are not currently shipped
+  by this repository;
+- the Observer is optional: policies and dataset tools can use Minecraft
+  Survival Gym directly from Python.
+
+The application is a companion integration, not a second implementation of
+the environment. Changes to action, observation, recording, or episode
+contracts belong in this repository and are consumed by the Observer.
+
+## Spatial memory in the application
+
+<p align="center">
+  <img src="docs/images/brincabot-spatial-map.png" alt="Interactive 3D voxel memory in BrincaBot Observer" width="100%">
+</p>
+
+The interactive map distinguishes the bot's current position, blocks observed
+now, and accumulated memory. It lets the researcher rotate, pan, zoom, inspect
+materials, and ask the bot's spatial consciousness about known and unknown
+regions.
+
+The canonical voxel representation remains richer than the navigation
+projection derived from it. This audit example verifies that structures at the
+same `(x, z)` coordinates — such as a bridge and a tunnel — remain distinct in
+3D instead of collapsing into a single 2D cell.
+
+<p align="center">
+  <img src="docs/images/voxel-memory-audit.png" alt="Canonical voxel memory and its derived navigation minimap" width="100%">
+</p>
+
+## Key capabilities
 
 - Gymnasium-compatible `reset()`, `step()`, `render()`, and `close()` API;
-- RGB observations combined with structured player state;
+- synchronized RGB, dense RGB-D, and structured player state;
 - movement, camera, combat, item use, hotbar, and GUI actions;
 - controlled simulation time with an exact number of ticks per action;
 - agent, human, and DAgger control modes;
 - atomic trajectory recording for behavior cloning and imitation learning;
+- versioned, replayable Dataset v2 episodes with quality and privacy gates;
 - deterministic mock backend for development without Minecraft;
-- pluggable reward functions decoupled from the game loop.
+- pluggable reward functions decoupled from the game loop;
 - an isolated five-stage Navigation Academy for movement, climbing, breaking,
-  bridge/stair construction, canonical dataset recording, and curriculum checks.
+  bridge/stair construction, canonical dataset recording, and curriculum checks;
 - a standalone, versioned RGB-to-depth dataset planner with dense-depth quality
-  gates, world-disjoint splits, coverage quotas, and storage estimates.
+  gates, world-disjoint splits, coverage quotas, and storage estimates;
+- sparse world memory, local voxel windows, raycast provenance, and an odometry
+  adapter for PanorAi RGB-D pose estimates.
 
 ## Navigation Academy
 
@@ -46,35 +130,42 @@ PYTHONPATH=src python -m minecraft_gym.cli academy train \
 ## Architecture
 
 ```text
-RL policy / Human operator
-            │
-            ▼
- MinecraftSurvivalEnv
-      (Gymnasium)
-            │  Local TCP / JSON
-            ▼
-     Fabric bridge mod
-            │
-            ▼
- Minecraft Java — Survival
-            │
-            └── RGB + vitals + pose + inventory + events
+Minecraft Java client / dedicated server
+          │  RGB-D, ticks, pose, inventory, events
+          ▼
+Fabric bridge + authoritative collector
+          │  minecraft-gym protocol
+          ▼
+MinecraftSurvivalEnv ───► policy / human / DAgger controller
+          │                         │
+          ├──► Dataset v2 recorder ◄┘
+          │       WAL · manifests · hashes · exports
+          │
+          └──► BrincaBot Observer
+               live view · map · recording · training monitor
 ```
 
-The bridge listens only on `127.0.0.1:25570`. Requests are processed sequentially to preserve the relationship between each action, the executed game ticks, and the returned observation.
+The client bridge listens only on `127.0.0.1:25570` by default. Requests are
+processed sequentially to preserve the relationship between each action, the
+executed game ticks, and the returned observation. Observer frames are for
+human supervision; a stream is trainable only when its manifest and quality
+report satisfy the Dataset v2 contracts.
 
 ## Project status
 
-The environment has been validated end to end against a real Minecraft client:
+The `0.4` research stack has been validated end to end against a real
+Minecraft client and continuously tested on Python 3.10–3.14:
 
 - Python-to-Fabric handshake;
-- `128 × 128 × 3` RGB capture;
+- configurable RGB capture and dense RGB-D transport;
 - exact four-tick advancement per action;
 - player movement and camera rotation;
-- DAgger execution;
-- human episode recording;
+- DAgger execution and human episode recording;
+- Dataset v2 admission, quarantine, replay, and exports;
+- spatial raycasts, accumulated navigation maps, and voxel memory;
+- isolated Navigation Academy training and checkpoint evaluation;
 - Gymnasium environment checker compliance;
-- automated Python test suite.
+- automated Python and Fabric CI.
 
 ## Requirements
 
@@ -97,17 +188,17 @@ run `minecraft-gym start` and `./gradlew runClient` as consecutive setup steps.
 
 | Route | Use it when | Minecraft command | Where worlds are saved |
 |---|---|---|---|
-| [Published release](#published-release-regular-launcher) | You want to use the installed Python package | `minecraft-gym setup`, then `minecraft-gym start` (version 0.3.2+) | Your Launcher installation's game directory |
+| [Published release](#published-release-regular-launcher) | You want to use the installed Python package | `minecraft-gym setup`, then `minecraft-gym start` | Your Launcher installation's game directory |
 | [Source checkout](#development-installation-from-source) | You are developing this repository | `cd fabric && ./gradlew runClient` | `fabric/run/saves/` |
 
 ### Published release (regular Launcher)
 
-#### One-time setup command (version 0.3.2 and later)
+#### One-time setup command
 
 The normal Launcher flow is:
 
 ```bash
-python -m pip install --upgrade minecraft-gym==0.3.2
+python -m pip install --upgrade minecraft-gym
 minecraft-gym setup
 minecraft-gym doctor
 ```
@@ -410,7 +501,7 @@ step=1 tick=... reward=... terminated=False truncated=False
 
 1. Install Fabric Loader for Minecraft 1.21.
 2. Place Fabric API in that installation's `mods` directory.
-3. Copy `fabric/build/libs/minecraft-gym-bridge-0.1.0.jar` into the same `mods` directory.
+3. Copy `fabric/build/libs/minecraft-gym-bridge-0.2.0.jar` into the same `mods` directory.
 4. Launch Minecraft with the Fabric profile.
 5. Enter a single-player Survival world and wait for it to finish loading.
 6. Run the Python command from Terminal 2 as shown above.
