@@ -29,7 +29,7 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.GameType;
 
 final class BridgeRuntime implements AutoCloseable {
-    static final int PROTOCOL_VERSION = 1;
+    static final int PROTOCOL_VERSION = 2;
 
     private final ConcurrentLinkedQueue<PendingRequest> requests = new ConcurrentLinkedQueue<>();
     private final ControlState.CursorState cursor = new ControlState.CursorState();
@@ -475,7 +475,7 @@ final class BridgeRuntime implements AutoCloseable {
     private static MinecraftServer requireIntegratedServer(Minecraft minecraft) {
         MinecraftServer server = minecraft.getSingleplayerServer();
         if (server == null) {
-            throw new IllegalStateException("Protocol v1 requires an integrated single-player server");
+            throw new IllegalStateException("The Gym bridge requires an integrated single-player server");
         }
         return server;
     }

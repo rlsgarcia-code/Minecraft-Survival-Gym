@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import socket
 import struct
+import time
 from typing import Any
 
 import numpy as np
@@ -19,7 +21,8 @@ from minecraft_gym.backend import (
 )
 
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
+SUPPORTED_PROTOCOL_VERSIONS = (2, 1)
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 25570
 MAX_MESSAGE_BYTES = 64 * 1024 * 1024
@@ -27,6 +30,60 @@ MAX_MESSAGE_BYTES = 64 * 1024 * 1024
 
 class BridgeProtocolError(RuntimeError):
     pass
+
+
+def probe_bridge(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    *,
+    timeout: float = 0.8,
+) -> dict[str, Any]:
+    """Read bridge identity and capabilities without changing a world."""
+
+    connection = LengthPrefixedJsonConnection(host, port, timeout=timeout)
+    try:
+        response = _negotiate(connection)
+    finally:
+        connection.close()
+    remote_version = int(response.get("protocol_version", -1))
+    if remote_version not in SUPPORTED_PROTOCOL_VERSIONS:
+        raise BridgeProtocolError(
+            f"Protocol mismatch: Python={SUPPORTED_PROTOCOL_VERSIONS}, bridge={remote_version}"
+        )
+    capabilities = response.get("capabilities", [])
+    if not isinstance(capabilities, list):
+        raise BridgeProtocolError("Bridge capabilities must be a list")
+    return {
+        "available": True,
+        "host": host,
+        "port": port,
+        "protocol_version": remote_version,
+        "bridge_version": response.get("bridge_version"),
+        "minecraft_version": response.get("minecraft_version"),
+        "capabilities": [str(item) for item in capabilities],
+        "action_contract": response.get("action_contract"),
+        "observation_contract": response.get("observation_contract"),
+        "tick_rate_hz": response.get("tick_rate_hz"),
+    }
+
+
+def _negotiate(connection: "LengthPrefixedJsonConnection") -> dict[str, Any]:
+    last_error: Exception | None = None
+    for version in SUPPORTED_PROTOCOL_VERSIONS:
+        payload: dict[str, Any] = {"type": "hello", "protocol_version": version}
+        if version == 2:
+            payload.update(
+                {
+                    "action_contract": "minecraft-native-control/v2",
+                    "observation_contract": "minecraft-observation/v2",
+                }
+            )
+        try:
+            return connection.request(payload)
+        except BridgeProtocolError as exc:
+            last_error = exc
+    assert last_error is not None
+    raise last_error
 
 
 class LengthPrefixedJsonConnection:
@@ -98,25 +155,62 @@ class SocketMinecraftBackend(MinecraftBackend):
         port: int = DEFAULT_PORT,
         *,
         timeout: float = 30.0,
+        visual_actor_id: str = "actor:pseudonym:java-client",
     ) -> None:
+        if not visual_actor_id.startswith("actor:pseudonym:"):
+            raise ValueError("visual_actor_id must be a dataset pseudonym")
         self.connection = LengthPrefixedJsonConnection(host, port, timeout=timeout)
+        self._visual_actor_id = visual_actor_id
+        self._visual_capture_sequence = 0
         self._last_frame: np.ndarray | None = None
         self._hello_complete = False
+        self._protocol_version = PROTOCOL_VERSION
+        self._session_id: str | None = None
+        self._episode_id: str | None = None
+        self._next_step_id = 0
 
     def reset(
         self, *, seed: int, options: dict[str, Any], width: int, height: int
     ) -> BackendTransition:
         self._hello()
-        response = self.connection.request(
-            {
-                "type": "reset",
-                "protocol_version": PROTOCOL_VERSION,
+        response = self._request(
+            "reset",
+            transition=True,
+            values={
                 "seed": seed,
                 "options": options,
                 "image": {"width": width, "height": height, "format": "raw_rgb8"},
-            }
+            },
         )
         return self._decode_transition(response)
+
+    def attach(self, *, width: int, height: int) -> BackendTransition:
+        """Attach passively to the current world without resetting it."""
+
+        response = self._request(
+            "observe_start",
+            transition=True,
+            values={
+                "image": {"width": width, "height": height, "format": "raw_rgb8"},
+            },
+        )
+        return self._decode_transition(response)
+
+    def observe(self) -> BackendTransition:
+        """Sample the current world without taking the control lease."""
+
+        return self._decode_transition(self._request("observe", transition=True))
+
+    def start_macro(self, control: ControlState) -> dict[str, Any]:
+        return self._request("macro_start", values={"action": control.to_dict()})
+
+    def stop_macro(self) -> BackendTransition:
+        return self._decode_transition(self._request("macro_stop", transition=True))
+
+    def keepalive(self) -> dict[str, Any]:
+        """Keep a passive persistent bridge session alive without a Gym step."""
+
+        return self._request("keepalive")
 
     def step(
         self,
@@ -125,14 +219,14 @@ class SocketMinecraftBackend(MinecraftBackend):
         frame_skip: int,
         control_mode: ControlMode,
     ) -> BackendTransition:
-        response = self.connection.request(
-            {
-                "type": "step",
-                "protocol_version": PROTOCOL_VERSION,
+        response = self._request(
+            "step",
+            transition=True,
+            values={
                 "frame_skip": frame_skip,
                 "control_mode": control_mode,
                 "action": control.to_dict(),
-            }
+            },
         )
         return self._decode_transition(response)
 
@@ -142,27 +236,66 @@ class SocketMinecraftBackend(MinecraftBackend):
     def close(self) -> None:
         if self._hello_complete:
             try:
-                self.connection.request(
-                    {"type": "close", "protocol_version": PROTOCOL_VERSION}
-                )
+                self._request("close")
             except (OSError, BridgeProtocolError, TimeoutError):
                 pass
         self.connection.close()
         self._hello_complete = False
+        self._session_id = None
+        self._episode_id = None
+        self._next_step_id = 0
+        self._visual_capture_sequence = 0
         self._last_frame = None
 
     def _hello(self) -> None:
         if self._hello_complete:
             return
-        response = self.connection.request(
-            {"type": "hello", "protocol_version": PROTOCOL_VERSION}
-        )
+        response = _negotiate(self.connection)
         remote_version = int(response.get("protocol_version", -1))
-        if remote_version != PROTOCOL_VERSION:
+        if remote_version not in SUPPORTED_PROTOCOL_VERSIONS:
             raise BridgeProtocolError(
-                f"Protocol mismatch: Python={PROTOCOL_VERSION}, bridge={remote_version}"
+                f"Protocol mismatch: Python={SUPPORTED_PROTOCOL_VERSIONS}, bridge={remote_version}"
             )
+        self._protocol_version = remote_version
+        self._session_id = response.get("session_id")
+        self._episode_id = response.get("episode_id")
+        self._next_step_id = 0
         self._hello_complete = True
+
+    def _request(
+        self,
+        request_type: str,
+        *,
+        transition: bool = False,
+        values: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self._hello()
+        payload: dict[str, Any] = {
+            "type": request_type,
+            "protocol_version": self._protocol_version,
+            **(values or {}),
+        }
+        if self._protocol_version == 2:
+            payload["session_id"] = self._session_id
+            if transition:
+                payload["step_id"] = self._next_step_id
+            canonical = json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+                ensure_ascii=False,
+            ).encode("utf-8")
+            payload["payload_sha256"] = hashlib.sha256(canonical).hexdigest()
+        response = self.connection.request(payload)
+        if self._protocol_version == 2 and transition:
+            if response.get("session_id") != self._session_id:
+                raise BridgeProtocolError("Bridge response changed session_id")
+            if int(response.get("step_id", -1)) != self._next_step_id:
+                raise BridgeProtocolError("Bridge response step_id is not contiguous")
+            self._episode_id = response.get("episode_id")
+            self._next_step_id += 1
+        return response
 
     def _decode_transition(self, response: dict[str, Any]) -> BackendTransition:
         raw = response.get("observation")
@@ -174,6 +307,29 @@ class SocketMinecraftBackend(MinecraftBackend):
         info = response.get("info", {})
         if not isinstance(events, list) or not isinstance(info, dict):
             raise BridgeProtocolError("Invalid events or info in bridge response")
+        # The Fabric image and observation tick are produced by the same
+        # client transition. Publish that provenance at the Gym boundary so
+        # consumers never have to infer which actor or renderer made a frame.
+        info = dict(info)
+        info.setdefault(
+            "visual_frame",
+            {
+                "interface": "minecraft-native-visual-frame/v1",
+                "stream_id": "view:demonstrator:egocentric",
+                "actor_id": self._visual_actor_id,
+                "viewpoint": "egocentric",
+                "source": "fabric_native",
+                "visual_domain": "native_java",
+                "server_tick": observation.tick,
+                "captured_monotonic_ns": time.monotonic_ns(),
+                "capture_sequence": self._visual_capture_sequence,
+                "width": int(observation.rgb.shape[1]),
+                "height": int(observation.rgb.shape[0]),
+                "alignment_method": "exact_client_tick",
+                "policy_eligible": True,
+            },
+        )
+        self._visual_capture_sequence += 1
         return BackendTransition(
             observation=observation,
             terminated=bool(response.get("terminated", False)),

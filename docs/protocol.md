@@ -1,25 +1,34 @@
-# Protocolo Minecraft Gym Bridge v1
+# Protocolo Minecraft Gym Bridge v2
 
 O cliente Python abre uma conexão TCP persistente com o mod Fabric em
-`127.0.0.1:25570`. Cada mensagem contém:
+`127.0.0.1:25570`. Cada mensagem contém um tamanho unsigned big-endian de
+quatro bytes seguido por um objeto JSON UTF-8. O limite é 64 MiB.
 
-1. tamanho JSON em quatro bytes unsigned, big-endian;
-2. objeto JSON UTF-8 com esse tamanho.
-
-O limite é 64 MiB por mensagem. Requisições e respostas são estritamente
-sequenciais para preservar a relação ação–tick–observação.
+Requisições e respostas são sequenciais. Cada conexão recebe um `session_id`;
+transições usam `step_id` contíguo e o servidor confirma sessão, episódio e
+passo. Toda requisição após o handshake contém SHA-256 do JSON canônico.
 
 ## Handshake
 
 ```json
-{"type":"hello","protocol_version":1}
+{
+  "type": "hello",
+  "protocol_version": 2,
+  "action_contract": "minecraft-native-control/v2",
+  "observation_contract": "minecraft-observation/v2"
+}
 ```
 
 ```json
 {
   "ok": true,
-  "protocol_version": 1,
+  "protocol_version": 2,
+  "bridge_version": "0.2.0",
   "minecraft_version": "fixed-by-mod-build",
+  "session_id": "session:uuid",
+  "action_contract": "minecraft-native-control/v2",
+  "observation_contract": "minecraft-observation/v2",
+  "tick_rate_hz": 20,
   "capabilities": [
     "rgb",
     "human_input",
@@ -27,7 +36,9 @@ sequenciais para preservar a relação ação–tick–observação.
     "survival_soft_reset",
     "frozen_tick_step",
     "semantic_events",
-    "privileged_context"
+    "privileged_context",
+    "checksummed_requests",
+    "contiguous_step_ack"
   ]
 }
 ```
@@ -37,23 +48,28 @@ sequenciais para preservar a relação ação–tick–observação.
 ```json
 {
   "type": "reset",
-  "protocol_version": 1,
+  "protocol_version": 2,
+  "session_id": "session:uuid",
+  "step_id": 0,
   "seed": 42,
   "options": {"difficulty": "normal", "start_time": 0},
-  "image": {"width": 128, "height": 128, "format": "raw_rgb8"}
+  "image": {"width": 128, "height": 128, "format": "raw_rgb8"},
+  "payload_sha256": "sha256-do-json-sem-este-campo"
 }
 ```
 
 O reset só responde depois que mundo, jogador e renderizador estiverem prontos.
-Na versão 1 ele restaura o jogador e condições globais no mundo aberto; a seed
-solicitada é informativa e a resposta indica se coincide com a seed real.
+Ele restaura o jogador e condições globais no mundo aberto; a seed solicitada é
+informativa e a resposta indica se coincide com a seed real.
 
 ## Step
 
 ```json
 {
   "type": "step",
-  "protocol_version": 1,
+  "protocol_version": 2,
+  "session_id": "session:uuid",
+  "step_id": 1,
   "frame_skip": 4,
   "control_mode": "agent",
   "action": {
@@ -73,7 +89,8 @@ solicitada é informativa e a resposta indica se coincide com a seed real.
     "cursor_y_delta": 0.0,
     "primary_click": false,
     "secondary_click": false
-  }
+  },
+  "payload_sha256": "sha256-do-json-sem-este-campo"
 }
 ```
 
@@ -85,6 +102,9 @@ o mod usa input humano quando houver intervenção e informa ambas as ações.
 ```json
 {
   "ok": true,
+  "session_id": "session:uuid",
+  "episode_id": "episode:uuid",
+  "step_id": 1,
   "observation": {
     "rgb": {
       "encoding": "raw_rgb8",
@@ -103,15 +123,7 @@ o mod usa input humano quando houver intervenção e informa ambas as ações.
   },
   "terminated": false,
   "truncated": false,
-  "events": [
-    {
-      "type": "inventory_delta",
-      "item": "minecraft:oak_log",
-      "before": 0,
-      "after": 1,
-      "delta": 1
-    }
-  ],
+  "events": [{"type": "inventory_delta", "item": "minecraft:oak_log", "delta": 1}],
   "info": {
     "control_source": "agent",
     "policy_action": {},
@@ -130,23 +142,30 @@ o mod usa input humano quando houver intervenção e informa ambas as ações.
 }
 ```
 
-`inventory_ids` e `inventory_counts` sempre possuem 36 elementos. Imagens são
-RGB, row-major, sem padding. `terminated` representa morte; desconexão, timeout
-ou limite operacional devem produzir `truncated`.
-
-Eventos suportados são `inventory_delta`, `recipe_unlocked`, `vital_delta`,
-`damage`, `death` e `ui_changed`. Durante a transição, o bridge também mantém
-os eventos legados `inventory_increased` e `health_lost`. Inventário é agregado
-por item, incluindo o stack carregado pelo cursor da GUI; reorganizar slots não
-produz progresso falso.
-
-`privileged_context` existe para rotulagem e avaliação. Ele não faz parte do
-espaço de observação e deve ser filtrado por políticas visuais.
+`inventory_ids` e `inventory_counts` possuem 36 elementos. Imagens são RGB,
+row-major e sem padding. Eventos incluem `inventory_delta`, `recipe_unlocked`,
+`vital_delta`, `damage`, `death` e `ui_changed`. `privileged_context` existe
+para recompensa e avaliação; não deve entrar na política visual.
 
 ## Close
 
 ```json
-{"type":"close","protocol_version":1}
+{
+  "type": "close",
+  "protocol_version": 2,
+  "session_id": "session:uuid",
+  "payload_sha256": "sha256-do-json-sem-este-campo"
+}
 ```
 
-O `close` encerra a sessão de controle, mas não precisa fechar o Minecraft.
+O `close` encerra a sessão de controle, mas não fecha o Minecraft.
+
+## JSON canônico e falhas
+
+O hash é calculado removendo `payload_sha256` e serializando o restante com
+chaves ordenadas, Unicode UTF-8 sem escape HTML e sem espaços entre separadores. Sessão incorreta,
+checksum inválido ou `step_id` fora de ordem são rejeitados antes da ação chegar
+ao runtime.
+
+O cliente Python negocia v1 apenas para migração de mods antigos. Uma coleta de
+pesquisa deve registrar a versão negociada e nunca tratar v1 como episódio v2.

@@ -22,6 +22,26 @@ Minecraft Survival Gym connects Python policies to Minecraft Java 1.21 through a
 - atomic trajectory recording for behavior cloning and imitation learning;
 - deterministic mock backend for development without Minecraft;
 - pluggable reward functions decoupled from the game loop.
+- an isolated five-stage Navigation Academy for movement, climbing, breaking,
+  bridge/stair construction, canonical dataset recording, and curriculum checks.
+- a standalone, versioned RGB-to-depth dataset planner with dense-depth quality
+  gates, world-disjoint splits, coverage quotas, and storage estimates.
+
+## Navigation Academy
+
+The controlled locomotion curriculum lives in this repository and shares one
+arena contract across the fast reference environment, real Minecraft datapack,
+task manifests, rewards, and dataset v2 recording. It never targets the family
+world. See [Navigation Academy v1](docs/navigation-academy.md) for the safety
+boundary, curriculum, commands, and visual-policy handoff.
+
+```bash
+PYTHONPATH=src python -m minecraft_gym.cli academy create \
+  --output training-worlds/navigation-academy-v1 --seed 42
+PYTHONPATH=src python -m minecraft_gym.cli academy train \
+  --output checkpoints/navigation-academy/q-v1.json \
+  --episodes-per-stage 1000 --seed 42
+```
 
 ## Architecture
 
@@ -94,7 +114,7 @@ minecraft-gym doctor
 
 `minecraft-gym setup` installs Fabric Loader for Minecraft 1.21, the matching
 Fabric API, and the bridge mod into the official Minecraft Launcher's game
-directory. The bridge 0.1.2 is included and verified inside the Python wheel;
+directory. The bridge 0.2.0 is included and verified inside the Python wheel;
 users do not need Git, Gradle, a source checkout, or a separate bridge download.
 The setup command leaves existing worlds untouched and refuses conflicting mod
 versions rather than deleting them. Install and open the official Launcher once
@@ -125,7 +145,13 @@ minecraft-gym world snapshot        create a hash-verified template from a close
 minecraft-gym world clone           create a fresh verified save from a template
 minecraft-gym start record          record a keyboard/mouse demonstration
 minecraft-gym start agent           run an external Python policy
+minecraft-gym rgbd estimate         size an RGB-to-depth collection
+minecraft-gym rgbd plan             write a versioned collection plan
 ```
+
+The RGB-to-depth dataset is deliberately separate from RL episodes. See
+[Minecraft RGB→Depth Dataset v1](docs/rgbd-perception-dataset.md) for the
+dense GPU-depth requirement, construction procedure, and capacity estimates.
 
 For example, create a reusable template and a disposable run without copying
 world directories by hand:
@@ -269,13 +295,13 @@ downloading a release artifact:
 
 ```bash
 uv run minecraft-gym setup \
-  --bridge-jar fabric/build/libs/minecraft-gym-bridge-0.1.2.jar
+  --bridge-jar fabric/build/libs/minecraft-gym-bridge-0.2.0.jar
 ```
 
 The mod artifact is written to:
 
 ```text
-fabric/build/libs/minecraft-gym-bridge-0.1.2.jar
+fabric/build/libs/minecraft-gym-bridge-0.2.0.jar
 ```
 
 ## Running the real environment
@@ -537,6 +563,14 @@ uv run python scripts/record_human.py \
 
 Each episode produces a compressed `.npz` archive and a `.json` metadata file. Episodes are committed atomically to reduce the chance of partially written datasets.
 
+This NPZ recorder is the backwards-compatible demonstration format. Research
+collection should use `minecraft_gym.dataset.DatasetRecorderV2`: it writes a
+WAL, validates versioned episode/step/action contracts, pseudonymization and
+quality gates, materializes canonical Parquet, and atomically admits or
+quarantines the episode. Install `minecraft-gym[research]` for Parquet, Minari,
+and MineStudio LMDB support. A missing Parquet runtime never silently releases
+an episode for training.
+
 Main arrays:
 
 | Field | Purpose |
@@ -670,12 +704,16 @@ Repository structure:
 ```text
 src/minecraft_gym/       environment, actions, rewards, recorder, and transport
 fabric/                  Fabric mod and local bridge
+fabric-server-26.3/      passive authoritative collector for the 26.3 server
 scripts/smoke_env.py     real or simulated smoke test
 scripts/record_human.py  human demonstration collection
 scripts/run_dev.sh       start Minecraft and JupyterLab
 scripts/stop_dev.sh      stop the development session
 tests/                   Gym contract and protocol tests
 docs/protocol.md         TCP protocol specification
+docs/dataset-v2.md       dataset contracts, quality gates, and server collection
+docs/spatial-raycast-v1.md pixel rays, block provenance, and replayable X/Z maps
+docs/odometric-belief-state-v1.md RGB-D odometry, deployable memory, and policy state assembly
 ```
 
 ## Roadmap
